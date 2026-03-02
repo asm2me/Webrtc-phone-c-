@@ -1,0 +1,314 @@
+<Window x:Class="WebRtcPhoneDialer.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="560" Width="500"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#F5F5F5">
+    <Window.Resources>
+        <!-- Placeholder: shows Tag text as faded italic hint when TextBox is empty -->
+        <Style x:Key="PlaceholderTextBox" TargetType="TextBox">
+            <Setter Property="Padding" Value="5,4"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2">
+                            <Grid>
+                                <TextBlock x:Name="Placeholder"
+                                           Text="{TemplateBinding Tag}"
+                                           Foreground="#AAAAAA" FontStyle="Italic"
+                                           Margin="7,0,0,0" VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="2,0"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="Placeholder" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0" Margin="10,10,10,0">
+
+            <!-- ===== Tab 1: Service ===== -->
+            <TabItem Header="Service">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <!-- WebRTC / Signaling -->
+                        <GroupBox Header="WebRTC &amp; Signaling" Padding="10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Label Grid.Row="0" Grid.Column="0" Content="Username:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="0" Grid.Column="1"
+                                         Style="{StaticResource PlaceholderTextBox}"
+                                         Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="e.g. 1000"
+                                         ToolTip="WebRTC/Verto username or extension number"/>
+
+                                <Label Grid.Row="1" Grid.Column="0" Content="Password:" VerticalAlignment="Center"/>
+                                <PasswordBox Grid.Row="1" Grid.Column="1" Height="28" Margin="0,4" Padding="5,4"
+                                             x:Name="WebRtcPasswordBox"
+                                             ToolTip="WebRTC/Verto account password"/>
+
+                                <Label Grid.Row="2" Grid.Column="0" Content="STUN Server:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="2" Grid.Column="1"
+                                         Style="{StaticResource PlaceholderTextBox}"
+                                         Text="{Binding StunServer, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="stun:stun.freeswitch.org"
+                                         ToolTip="FreeSWITCH public STUN server: stun:stun.freeswitch.org"/>
+
+                                <Label Grid.Row="3" Grid.Column="0" Content="TURN Server:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="3" Grid.Column="1"
+                                         Style="{StaticResource PlaceholderTextBox}"
+                                         Text="{Binding TurnServer, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="turn:192.168.1.100:3478"
+                                         ToolTip="coturn on FreeSWITCH host, e.g. turn:192.168.1.100:3478"/>
+
+                                <Label Grid.Row="4" Grid.Column="0" Content="TURN User:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="4" Grid.Column="1"
+                                         Style="{StaticResource PlaceholderTextBox}"
+                                         Text="{Binding TurnUsername, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="e.g. turnuser"
+                                         ToolTip="coturn username (from turnserver.conf static-auth-secret or user=)"/>
+
+                                <Label Grid.Row="5" Grid.Column="0" Content="TURN Password:" VerticalAlignment="Center"/>
+                                <PasswordBox Grid.Row="5" Grid.Column="1" Height="28" Margin="0,4" Padding="5,4"
+                                             x:Name="TurnPasswordBox"
+                                             ToolTip="coturn password (from turnserver.conf)"/>
+
+                                <Label Grid.Row="6" Grid.Column="0" Content="ICE Servers:" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                                <TextBox Grid.Row="6" Grid.Column="1" Height="56" Margin="0,4" Padding="5,4"
+                                         Text="{Binding IceServers, UpdateSourceTrigger=PropertyChanged}"
+                                         TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                         ToolTip="One server per line. FreeSWITCH example:&#x0a;stun:stun.freeswitch.org&#x0a;turn:192.168.1.100:3478"/>
+
+                                <Label Grid.Row="7" Grid.Column="0" Content="Signaling URL:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="7" Grid.Column="1"
+                                         Style="{StaticResource PlaceholderTextBox}"
+                                         Text="{Binding SignalingServerUrl, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="wss://192.168.1.100:7443"
+                                         ToolTip="FreeSWITCH Verto (mod_verto): wss://host:7443 or ws://host:8081"/>
+
+                                <Label Grid.Row="8" Grid.Column="0" Content="Auth Token:" VerticalAlignment="Center"/>
+                                <PasswordBox Grid.Row="8" Grid.Column="1" Height="28" Margin="0,4" Padding="5,4"
+                                             x:Name="AuthTokenBox"
+                                             ToolTip="Verto login token or API key (leave empty if not required)"/>
+                            </Grid>
+                        </GroupBox>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ===== Tab 2: Audio ===== -->
+            <TabItem Header="Audio">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10">
+
+                    <GroupBox Header="Audio Devices" Margin="0,0,0,12" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <CheckBox Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                      Content="Enable Audio" Margin="0,0,0,10"
+                                      IsChecked="{Binding EnableAudio}"/>
+
+                            <Label Grid.Row="1" Grid.Column="0" Content="Microphone:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Height="28" Margin="0,4"
+                                      x:Name="InputDeviceCombo"
+                                      IsEnabled="{Binding EnableAudio}"/>
+
+                            <Label Grid.Row="2" Grid.Column="0" Content="Speaker:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Height="28" Margin="0,4"
+                                      x:Name="OutputDeviceCombo"
+                                      IsEnabled="{Binding EnableAudio}"/>
+                        </Grid>
+                    </GroupBox>
+
+                    <GroupBox Header="Volume" Margin="0,0,0,12" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="35"/>
+                                <ColumnDefinition Width="50"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Label Grid.Row="0" Grid.Column="0" Content="Input Volume:" VerticalAlignment="Center"/>
+                            <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="10"
+                                    Value="{Binding InputVolume}" VerticalAlignment="Center" Margin="0,6"
+                                    IsEnabled="{Binding EnableAudio}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                       Text="{Binding InputVolume}"/>
+
+                            <Label Grid.Row="1" Grid.Column="0" Content="Output Volume:" VerticalAlignment="Center"/>
+                            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="10"
+                                    Value="{Binding OutputVolume}" VerticalAlignment="Center" Margin="0,6"
+                                    IsEnabled="{Binding EnableAudio}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                       Text="{Binding OutputVolume}"/>
+                            <Button Grid.Row="1" Grid.Column="3" Content="Test" Height="24" Margin="4,0,0,0"
+                                    IsEnabled="{Binding EnableAudio}"
+                                    Click="TestOutputVolume_Click"
+                                    ToolTip="Play a test tone through the selected speaker"/>
+                        </Grid>
+                    </GroupBox>
+
+                    <GroupBox Header="Processing" Margin="0,0,0,12" Padding="10">
+                        <StackPanel>
+                            <CheckBox Content="Echo Cancellation" Margin="0,0,0,8"
+                                      IsChecked="{Binding EchoCancellation}"
+                                      IsEnabled="{Binding EnableAudio}"/>
+                            <CheckBox Content="Noise Suppression"
+                                      IsChecked="{Binding NoiseSuppression}"
+                                      IsEnabled="{Binding EnableAudio}"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <!-- Ringtone GroupBox -->
+                    <GroupBox Header="Ringtone" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="35"/>
+                                <ColumnDefinition Width="55"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Label Grid.Row="0" Grid.Column="0" Content="Ring Device:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3"
+                                      Height="28" Margin="0,4"
+                                      x:Name="RingDeviceCombo"
+                                      ToolTip="Output device used for incoming call ringtone"/>
+
+                            <Label Grid.Row="1" Grid.Column="0" Content="Ringtone:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                      Height="28" Margin="0,4"
+                                      x:Name="RingtoneCombo"
+                                      ItemsSource="{Binding RingtoneOptions}"
+                                      SelectedItem="{Binding RingtoneName}"
+                                      ToolTip="Sound played on incoming call (Windows Media .wav files)"/>
+                            <Button Grid.Row="1" Grid.Column="3" Content="▶ Play" Height="28" Margin="4,4,0,4"
+                                    Click="PreviewRingtone_Click"
+                                    ToolTip="Preview the selected ringtone"/>
+
+                            <Label Grid.Row="2" Grid.Column="0" Content="Ring Volume:" VerticalAlignment="Center"/>
+                            <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="10"
+                                    Value="{Binding RingVolume}" VerticalAlignment="Center" Margin="0,6"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                       Text="{Binding RingVolume}"/>
+                        </Grid>
+                    </GroupBox>
+
+                </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ===== Tab 3: Codecs ===== -->
+            <TabItem Header="Codecs">
+                <StackPanel Margin="10">
+
+                    <GroupBox Header="Audio Codec" Margin="0,0,0,12" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Label Grid.Column="0" Content="Preferred Codec:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Column="1" Height="28"
+                                      ItemsSource="{Binding AudioCodecOptions}"
+                                      SelectedItem="{Binding AudioCodecName}"/>
+                        </Grid>
+                        <GroupBox.ToolTip>
+                            Opus: best quality for WebRTC. G.711 (PCMU/PCMA): legacy SIP compatibility. G.722: HD voice.
+                        </GroupBox.ToolTip>
+                    </GroupBox>
+
+                    <GroupBox Header="Video" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <CheckBox Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                      Content="Enable Video" Margin="0,0,0,10"
+                                      IsChecked="{Binding EnableVideo}"/>
+
+                            <Label Grid.Row="1" Grid.Column="0" Content="Preferred Codec:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Height="28"
+                                      ItemsSource="{Binding VideoCodecOptions}"
+                                      SelectedItem="{Binding VideoCodecName}"
+                                      IsEnabled="{Binding EnableVideo}"/>
+                        </Grid>
+                    </GroupBox>
+
+                </StackPanel>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- Bottom buttons -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
+            <Button Content="Cancel" Width="90" Height="32" Margin="0,0,8,0"
+                    Click="Cancel_Click"/>
+            <Button Content="Save" Width="90" Height="32"
+                    Background="#2196F3" Foreground="White" FontWeight="Bold"
+                    Click="Save_Click"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

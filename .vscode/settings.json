@@ -1,0 +1,10 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "dotnet build": true,
+        "/^dotnet --info$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "dotnet run": true
+    }
+}
