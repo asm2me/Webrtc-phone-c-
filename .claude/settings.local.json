@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet build \"WebRtcPhoneDialer.csproj\")"
+      "Bash(dotnet build \"WebRtcPhoneDialer.csproj\")",
+      "Bash(taskkill /PID 16140 /F)"
     ],
     "additionalDirectories": [
       "C:\\Users\\asm2m\\.claude\\projects\\c--Users-asm2m-Webrtc-c-"

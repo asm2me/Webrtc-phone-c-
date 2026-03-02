@@ -12,6 +12,17 @@ namespace WebRtcPhoneDialer.Services
 {
     public enum RegistrationState { Unregistered, Registering, Registered, Failed }
 
+    public class SipLogEventArgs : EventArgs
+    {
+        public string Direction { get; }   // ">>" = sent, "<<" = received
+        public string Message  { get; }
+        public SipLogEventArgs(string direction, string message)
+        {
+            Direction = direction;
+            Message   = message;
+        }
+    }
+
     public class WebRtcService : IDisposable
     {
         private CallSession? _currentCall;
@@ -20,6 +31,13 @@ namespace WebRtcPhoneDialer.Services
         private bool _disposed = false;
         private ClientWebSocket? _signalingSocket;
         private CancellationTokenSource? _registrationCts;
+
+        // SIP domain override (Settings > SIP Domain field)
+        private string? _sipDomain;
+
+        // Circular buffer of last 200 SIP messages for Debug window replay
+        private readonly Queue<SipLogEventArgs> _sipLogBuffer = new();
+        private const int SipLogBufferMax = 200;
 
         // Active call signaling state
         private string? _activeCallId;
@@ -33,8 +51,17 @@ namespace WebRtcPhoneDialer.Services
 
         public RegistrationState RegistrationState { get; private set; } = RegistrationState.Unregistered;
         public string RegistrationMessage { get; private set; } = "Not registered";
+        public string? LastCallFailureReason { get; private set; }
+
         public event EventHandler<RegistrationState>? RegistrationStateChanged;
-        public event EventHandler<CallState>? CallStateChanged;
+        public event EventHandler<CallState>?         CallStateChanged;
+        public event EventHandler<SipLogEventArgs>?   SipMessageLogged;
+
+        public IEnumerable<SipLogEventArgs> GetSipLogHistory()
+        {
+            lock (_sipLogBuffer)
+                return _sipLogBuffer.ToArray();
+        }
 
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -52,7 +79,7 @@ namespace WebRtcPhoneDialer.Services
                 new IceServer { Url = "stun:stun.l.google.com:19302" },
                 new IceServer { Url = "stun:stun1.l.google.com:19302" }
             };
-            _config.StunServer = "stun:stun.l.google.com:19302";
+            _config.StunServer  = "stun:stun.l.google.com:19302";
             _config.EnableAudio = true;
             _config.EnableVideo = false;
         }
@@ -66,24 +93,25 @@ namespace WebRtcPhoneDialer.Services
 
             if (_currentCall != null &&
                 (_currentCall.State == CallState.Initiating ||
-                 _currentCall.State == CallState.Ringing ||
+                 _currentCall.State == CallState.Ringing    ||
                  _currentCall.State == CallState.Connected))
                 throw new InvalidOperationException("A call is already active. Please hang up first.");
 
             if (string.IsNullOrEmpty(_config.SignalingServerUrl))
                 throw new InvalidOperationException("Signaling server URL not configured.");
 
-            var host    = new Uri(_config.SignalingServerUrl).Host;
+            var host     = _sipDomain ?? new Uri(_config.SignalingServerUrl).Host;
             var username = _config.Username ?? "";
 
-            _activeCallId      = Guid.NewGuid().ToString("N");
-            _activeCallFromTag = Guid.NewGuid().ToString("N").Substring(0, 8);
-            _activeCallToTag   = null;
-            _activeCallHost    = host;
-            _activeCallRemote  = remoteParty;
+            LastCallFailureReason = null;
+            _activeCallId       = Guid.NewGuid().ToString("N");
+            _activeCallFromTag  = Guid.NewGuid().ToString("N").Substring(0, 8);
+            _activeCallToTag    = null;
+            _activeCallHost     = host;
+            _activeCallRemote   = remoteParty;
             _activeCallUsername = username;
-            _activeCallBranch  = "z9hG4bK" + Guid.NewGuid().ToString("N").Substring(0, 16);
-            _activeCallCSeq    = 1;
+            _activeCallBranch   = "z9hG4bK" + Guid.NewGuid().ToString("N").Substring(0, 16);
+            _activeCallCSeq     = 1;
 
             _currentCall = new CallSession
             {
@@ -161,24 +189,26 @@ namespace WebRtcPhoneDialer.Services
         {
             try
             {
-                _config.Username         = settings.Username;
-                _config.Password         = settings.Password;
-                _config.StunServer       = settings.StunServer;
-                _config.TurnServer       = settings.TurnServer;
-                _config.TurnUsername     = settings.TurnUsername;
-                _config.TurnPassword     = settings.TurnPassword;
+                _config.Username          = settings.Username;
+                _config.Password          = settings.Password;
+                _config.StunServer        = settings.StunServer;
+                _config.TurnServer        = settings.TurnServer;
+                _config.TurnUsername      = settings.TurnUsername;
+                _config.TurnPassword      = settings.TurnPassword;
                 _config.SignalingServerUrl = settings.SignalingServerUrl;
-                _config.AuthToken        = settings.AuthToken;
+                _config.AuthToken         = settings.AuthToken;
 
-                _config.EnableAudio      = settings.EnableAudio;
-                _config.EchoCancellation = settings.EchoCancellation;
-                _config.NoiseSuppression = settings.NoiseSuppression;
-                _config.InputVolume      = settings.InputVolume;
-                _config.OutputVolume     = settings.OutputVolume;
+                _config.EnableAudio       = settings.EnableAudio;
+                _config.EchoCancellation  = settings.EchoCancellation;
+                _config.NoiseSuppression  = settings.NoiseSuppression;
+                _config.InputVolume       = settings.InputVolume;
+                _config.OutputVolume      = settings.OutputVolume;
 
-                _config.AudioCodecName   = settings.AudioCodecName;
-                _config.EnableVideo      = settings.EnableVideo;
-                _config.VideoCodecName   = settings.VideoCodecName;
+                _config.AudioCodecName    = settings.AudioCodecName;
+                _config.EnableVideo       = settings.EnableVideo;
+                _config.VideoCodecName    = settings.VideoCodecName;
+
+                _sipDomain = string.IsNullOrWhiteSpace(settings.SipDomain) ? null : settings.SipDomain.Trim();
 
                 _config.IceServers.Clear();
                 foreach (var line in settings.IceServers.Split('\n'))
@@ -214,6 +244,32 @@ namespace WebRtcPhoneDialer.Services
             CallStateChanged?.Invoke(this, state);
         }
 
+        private void LogSipSent(string message)
+        {
+            var entry = new SipLogEventArgs(">>", message);
+            BufferSipEntry(entry);
+            Logger.Debug($"SIP SEND: {FirstLine(message)}");
+            SipMessageLogged?.Invoke(this, entry);
+        }
+
+        private void LogSipReceived(string message)
+        {
+            var entry = new SipLogEventArgs("<<", message);
+            BufferSipEntry(entry);
+            Logger.Debug($"SIP RECV: {FirstLine(message)}");
+            SipMessageLogged?.Invoke(this, entry);
+        }
+
+        private void BufferSipEntry(SipLogEventArgs entry)
+        {
+            lock (_sipLogBuffer)
+            {
+                _sipLogBuffer.Enqueue(entry);
+                while (_sipLogBuffer.Count > SipLogBufferMax)
+                    _sipLogBuffer.Dequeue();
+            }
+        }
+
         // ── Registration ──────────────────────────────────────────────────────────
 
         public async Task RegisterAsync()
@@ -244,7 +300,7 @@ namespace WebRtcPhoneDialer.Services
                 await _signalingSocket.ConnectAsync(uri, _registrationCts.Token);
                 Logger.Info($"WebSocket connected: {_config.SignalingServerUrl}");
 
-                var host     = uri.Host;
+                var host     = _sipDomain ?? uri.Host;
                 var username = _config.Username ?? "";
                 var password = _config.Password ?? "";
                 var callId   = Guid.NewGuid().ToString("N");
@@ -255,7 +311,6 @@ namespace WebRtcPhoneDialer.Services
                 // Step 1: unauthenticated REGISTER
                 await SendSipAsync(BuildRegister(username, host, localHost, callId, tag, branch, 1, null));
                 var resp1 = await ReceiveSipAsync();
-                Logger.Debug($"REGISTER(1) response: {FirstLine(resp1)}");
 
                 if (resp1.StartsWith("SIP/2.0 200"))
                 {
@@ -280,7 +335,6 @@ namespace WebRtcPhoneDialer.Services
                     var authValue = BuildDigestAuth(wwwAuth, username, password, host, "REGISTER");
                     await SendSipAsync(BuildRegister(username, host, localHost, callId, tag, branch2, 2, authValue));
                     var resp2 = await ReceiveSipAsync();
-                    Logger.Debug($"REGISTER(2) response: {FirstLine(resp2)}");
 
                     if (resp2.StartsWith("SIP/2.0 200"))
                     {
@@ -329,7 +383,7 @@ namespace WebRtcPhoneDialer.Services
                     var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     if (string.IsNullOrWhiteSpace(msg)) continue;
 
-                    Logger.Debug($"SIP incoming: {FirstLine(msg)}");
+                    LogSipReceived(msg);
 
                     if (msg.StartsWith("OPTIONS"))
                         await SendOptionsResponseAsync(msg, ct);
@@ -356,12 +410,10 @@ namespace WebRtcPhoneDialer.Services
             if (_activeCallId == null || callId != _activeCallId || _currentCall == null)
                 return;
 
-            // Already ended (e.g. 487 after CANCEL) — ignore
             if (_currentCall.State == CallState.Ended)
                 return;
 
             var first = FirstLine(msg);
-            Logger.Debug($"Call response: {first}");
 
             if (first.Contains(" 100 "))
             {
@@ -380,9 +432,39 @@ namespace WebRtcPhoneDialer.Services
                 await SendAckAsync();
                 SetCallState(CallState.Connected);
             }
+            else if (first.Contains(" 401 ") || first.Contains(" 407 "))
+            {
+                // Asterisk challenges the INVITE — re-send with digest auth
+                var headerName = first.Contains(" 401 ") ? "WWW-Authenticate" : "Proxy-Authenticate";
+                var wwwAuth    = ExtractSipHeader(msg, headerName);
+
+                if (wwwAuth == null || _activeCallHost == null || _activeCallUsername == null)
+                {
+                    LastCallFailureReason = "Auth challenge missing header";
+                    SetCallState(CallState.Failed);
+                    _currentCall = null;
+                    return;
+                }
+
+                var inviteUri = $"sip:{_activeCallRemote}@{_activeCallHost}";
+                var authValue = BuildDigestAuth(wwwAuth, _activeCallUsername,
+                    _config.Password ?? "", _activeCallHost, "INVITE", inviteUri);
+
+                // New branch + incremented CSeq for re-sent INVITE
+                _activeCallBranch = "z9hG4bK" + Guid.NewGuid().ToString("N").Substring(0, 16);
+                _activeCallCSeq++;
+
+                var sdp    = GenerateSdpOffer();
+                var invite = BuildInvite(sdp, authValue);
+                await SendSipAsync(invite);
+                Logger.Info("Re-sent INVITE with digest auth");
+            }
             else
             {
+                LastCallFailureReason = first;
                 Logger.Warn($"Call failed/rejected: {first}");
+                if (_currentCall != null)
+                    _currentCall.ErrorMessage = first;
                 SetCallState(CallState.Failed);
                 _currentCall = null;
             }
@@ -390,8 +472,7 @@ namespace WebRtcPhoneDialer.Services
 
         private async Task HandleRemoteByeAsync(string msg)
         {
-            // Acknowledge the BYE
-            var sb = new StringBuilder("SIP/2.0 200 OK\r\n");
+            var sb     = new StringBuilder("SIP/2.0 200 OK\r\n");
             var via    = ExtractSipHeader(msg, "Via");
             var from   = ExtractSipHeader(msg, "From");
             var to     = ExtractSipHeader(msg, "To");
@@ -418,7 +499,7 @@ namespace WebRtcPhoneDialer.Services
 
         // ── SIP message builders ──────────────────────────────────────────────────
 
-        private string BuildInvite(string sdp)
+        private string BuildInvite(string sdp, string? authorization = null)
         {
             var sdpLen = Encoding.UTF8.GetByteCount(sdp);
             var sb = new StringBuilder();
@@ -431,6 +512,8 @@ namespace WebRtcPhoneDialer.Services
             sb.Append($"CSeq: {_activeCallCSeq} INVITE\r\n");
             sb.Append($"Contact: <sip:{_activeCallUsername}@sip-client.invalid;transport=wss>\r\n");
             sb.Append("Allow: INVITE, ACK, BYE, CANCEL, OPTIONS\r\n");
+            if (authorization != null)
+                sb.Append($"Authorization: {authorization}\r\n");
             sb.Append("Content-Type: application/sdp\r\n");
             sb.Append($"Content-Length: {sdpLen}\r\n");
             sb.Append("\r\n");
@@ -475,7 +558,6 @@ namespace WebRtcPhoneDialer.Services
 
         private async Task SendCancelAsync()
         {
-            // CANCEL reuses the same Via branch as the original INVITE
             var sb = new StringBuilder();
             sb.Append($"CANCEL sip:{_activeCallRemote}@{_activeCallHost} SIP/2.0\r\n");
             sb.Append($"Via: SIP/2.0/WSS sip-client.invalid;branch={_activeCallBranch}\r\n");
@@ -564,6 +646,7 @@ namespace WebRtcPhoneDialer.Services
 
         private async Task SendSipAsync(string message)
         {
+            LogSipSent(message);
             var bytes = Encoding.UTF8.GetBytes(message);
             await _signalingSocket!.SendAsync(
                 new ArraySegment<byte>(bytes),
@@ -575,6 +658,7 @@ namespace WebRtcPhoneDialer.Services
         private async Task SendRawAsync(string message)
         {
             if (_signalingSocket?.State != WebSocketState.Open) return;
+            LogSipSent(message);
             var bytes = Encoding.UTF8.GetBytes(message);
             await _signalingSocket.SendAsync(
                 new ArraySegment<byte>(bytes),
@@ -589,7 +673,9 @@ namespace WebRtcPhoneDialer.Services
             var result = await _signalingSocket!.ReceiveAsync(
                 new ArraySegment<byte>(buffer),
                 _registrationCts!.Token);
-            return Encoding.UTF8.GetString(buffer, 0, result.Count);
+            var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            LogSipReceived(msg);
+            return msg;
         }
 
         private static string? ExtractSipHeader(string message, string headerName)
@@ -603,9 +689,11 @@ namespace WebRtcPhoneDialer.Services
         }
 
         private static string BuildDigestAuth(
-            string wwwAuth, string user, string password, string host, string method)
+            string wwwAuth, string user, string password, string host, string method,
+            string? uriOverride = null)
         {
-            static string Param(string src, string key)
+            // Extract quoted param: key="value"
+            static string QParam(string src, string key)
             {
                 var token = key + "=\"";
                 var i = src.IndexOf(token, StringComparison.OrdinalIgnoreCase);
@@ -614,25 +702,57 @@ namespace WebRtcPhoneDialer.Services
                 var j = src.IndexOf('"', i);
                 return j > i ? src.Substring(i, j - i) : "";
             }
+            // Extract possibly-unquoted param (e.g. algorithm=MD5, qop="auth")
+            static string AnyParam(string src, string key)
+            {
+                var v = QParam(src, key);
+                if (!string.IsNullOrEmpty(v)) return v;
+                var token = key + "=";
+                var i = src.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+                if (i < 0) return "";
+                i += token.Length;
+                var end = src.IndexOfAny(new[] { ',', ' ', '\r', '\n' }, i);
+                return end >= 0 ? src.Substring(i, end - i).Trim() : src.Substring(i).Trim();
+            }
 
-            var realm     = Param(wwwAuth, "realm");
-            var nonce     = Param(wwwAuth, "nonce");
-            var algorithm = Param(wwwAuth, "algorithm");
+            var realm     = QParam(wwwAuth, "realm");
+            var nonce     = QParam(wwwAuth, "nonce");
+            var opaque    = QParam(wwwAuth, "opaque");
+            var qop       = QParam(wwwAuth, "qop");           // "auth" or "auth,auth-int" or ""
+            var algorithm = AnyParam(wwwAuth, "algorithm");
             if (string.IsNullOrEmpty(algorithm)) algorithm = "MD5";
 
-            var uri      = $"sip:{host}";
-            var ha1      = ComputeMd5($"{user}:{realm}:{password}");
-            var ha2      = ComputeMd5($"{method}:{uri}");
-            var response = ComputeMd5($"{ha1}:{nonce}:{ha2}");
+            var uri = uriOverride ?? $"sip:{host}";
+            var ha1 = ComputeMd5($"{user}:{realm}:{password}");
+            var ha2 = ComputeMd5($"{method}:{uri}");
 
-            return $"Digest username=\"{user}\",realm=\"{realm}\",nonce=\"{nonce}\"," +
-                   $"uri=\"{uri}\",response=\"{response}\",algorithm={algorithm}";
+            var sb = new StringBuilder();
+            sb.Append($"Digest username=\"{user}\",realm=\"{realm}\",nonce=\"{nonce}\",uri=\"{uri}\"");
+
+            if (!string.IsNullOrEmpty(qop) && qop.Contains("auth"))
+            {
+                var cnonce   = Guid.NewGuid().ToString("N").Substring(0, 8);
+                const string nc = "00000001";
+                var response = ComputeMd5($"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2}");
+                sb.Append($",response=\"{response}\",algorithm={algorithm}");
+                sb.Append($",cnonce=\"{cnonce}\",nc={nc},qop=auth");
+            }
+            else
+            {
+                var response = ComputeMd5($"{ha1}:{nonce}:{ha2}");
+                sb.Append($",response=\"{response}\",algorithm={algorithm}");
+            }
+
+            if (!string.IsNullOrEmpty(opaque))
+                sb.Append($",opaque=\"{opaque}\"");
+
+            return sb.ToString();
         }
 
         private static string ComputeMd5(string input)
         {
-            using var md5   = MD5.Create();
-            var bytes       = md5.ComputeHash(Encoding.UTF8.GetBytes(input));
+            using var md5 = MD5.Create();
+            var bytes     = md5.ComputeHash(Encoding.UTF8.GetBytes(input));
             return BitConverter.ToString(bytes).Replace("-", "").ToLower();
         }
 
@@ -655,8 +775,7 @@ namespace WebRtcPhoneDialer.Services
             sb.Append("Allow: INVITE, ACK, BYE, CANCEL, OPTIONS, REGISTER\r\n");
             sb.Append("Content-Length: 0\r\n\r\n");
 
-            var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-            await _signalingSocket!.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+            await SendRawAsync(sb.ToString());
             Logger.Debug("OPTIONS 200 OK sent");
         }
 

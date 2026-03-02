@@ -15,6 +15,7 @@ namespace WebRtcPhoneDialer.Models
         public string TurnPassword { get; set; } = string.Empty;
         public string IceServers { get; set; } = "stun:stun.l.google.com:19302";
         public string SignalingServerUrl { get; set; } = string.Empty;
+        public string SipDomain { get; set; } = string.Empty;
         public string AuthToken { get; set; } = string.Empty;
 
         // Audio

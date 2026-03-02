@@ -32,6 +32,9 @@ namespace WebRtcPhoneDialer.ViewModels
         private string _signalingServerUrl;
         public string SignalingServerUrl { get => _signalingServerUrl; set { _signalingServerUrl = value; OnPropertyChanged(); } }
 
+        private string _sipDomain;
+        public string SipDomain { get => _sipDomain; set { _sipDomain = value; OnPropertyChanged(); } }
+
         private string _authToken;
         public string AuthToken { get => _authToken; set { _authToken = value; OnPropertyChanged(); } }
 
@@ -109,6 +112,7 @@ namespace WebRtcPhoneDialer.ViewModels
             _turnPassword = settings.TurnPassword;
             _iceServers = settings.IceServers;
             _signalingServerUrl = settings.SignalingServerUrl;
+            _sipDomain = settings.SipDomain;
             _authToken = settings.AuthToken;
 
             _enableAudio = settings.EnableAudio;
@@ -140,6 +144,7 @@ namespace WebRtcPhoneDialer.ViewModels
                 TurnPassword = TurnPassword,
                 IceServers = IceServers,
                 SignalingServerUrl = SignalingServerUrl,
+                SipDomain = SipDomain,
                 AuthToken = AuthToken,
 
                 EnableAudio = EnableAudio,

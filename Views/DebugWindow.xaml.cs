@@ -1,6 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Windows;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Threading;
+using WebRtcPhoneDialer.Models;
 using WebRtcPhoneDialer.Services;
 
 namespace WebRtcPhoneDialer.Views
@@ -9,67 +14,164 @@ namespace WebRtcPhoneDialer.Views
     {
         private readonly WebRtcService _webRtcService;
 
+        // Colour palette (dark-terminal theme)
+        private static readonly SolidColorBrush BrushTimestamp = new(Color.FromRgb(0x80, 0x80, 0x80));
+        private static readonly SolidColorBrush BrushSend      = new(Color.FromRgb(0x56, 0x9C, 0xD6)); // blue  — sent
+        private static readonly SolidColorBrush BrushRecv      = new(Color.FromRgb(0x6A, 0x99, 0x55)); // green — received
+        private static readonly SolidColorBrush BrushError     = new(Color.FromRgb(0xF4, 0x47, 0x47)); // red   — 4xx/5xx/6xx
+        private static readonly SolidColorBrush BrushInfo      = new(Color.FromRgb(0xFF, 0xD7, 0x00)); // yellow — events
+        private static readonly SolidColorBrush BrushBody      = new(Color.FromRgb(0xCC, 0xCC, 0xCC)); // light grey — headers/SDP
+
         public DebugWindow(WebRtcService webRtcService)
         {
             InitializeComponent();
             _webRtcService = webRtcService;
-            _webRtcService.RegistrationStateChanged += OnStateChanged;
-            RefreshInfo();
+
+            // Clear the default empty paragraph WPF inserts
+            SipLog.Document.Blocks.Clear();
+
+            // Subscribe before replaying history so new events aren't missed
+            _webRtcService.RegistrationStateChanged += OnRegistrationStateChanged;
+            _webRtcService.CallStateChanged         += OnCallStateChanged;
+            _webRtcService.SipMessageLogged         += OnSipMessageLogged;
+
+            RefreshStatus();
+
+            // Replay buffered SIP traffic so registration messages are visible
+            // even when the window is opened after registration already completed
+            AppendInfo("=== SIP log — replaying history ===");
+            foreach (var entry in _webRtcService.GetSipLogHistory())
+                AppendSip(entry.Direction, entry.Message);
+            AppendInfo("=== live traffic below ===");
         }
 
-        private void OnStateChanged(object? sender, RegistrationState state)
+        // ── Event handlers ────────────────────────────────────────────────────────
+
+        private void OnRegistrationStateChanged(object? sender, RegistrationState state)
+            => Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(RefreshStatus));
+
+        private void OnCallStateChanged(object? sender, CallState state)
         {
-            Dispatcher.Invoke(RefreshInfo);
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            {
+                RefreshStatus();
+                var reason = state == CallState.Failed
+                    ? $": {_webRtcService.LastCallFailureReason ?? "unknown"}"
+                    : "";
+                AppendInfo($"Call state → {state}{reason}");
+            }));
         }
 
-        private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshInfo();
-
-        private void RefreshInfo()
+        private void OnSipMessageLogged(object? sender, SipLogEventArgs e)
         {
-            var config = _webRtcService.GetConfiguration();
+            // Capture values before crossing thread boundary
+            var dir = e.Direction;
+            var msg = e.Message;
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => AppendSip(dir, msg)));
+        }
+
+        // ── Button handlers ───────────────────────────────────────────────────────
+
+        private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshStatus();
+
+        private void ClearLog_Click(object sender, RoutedEventArgs e)
+        {
+            SipLog.Document.Blocks.Clear();
+            AppendInfo("Log cleared.");
+        }
+
+        // ── Status panel ──────────────────────────────────────────────────────────
+
+        private void RefreshStatus()
+        {
+            var cfg  = _webRtcService.GetConfiguration();
             var call = _webRtcService.GetCurrentCall();
 
             var sb = new StringBuilder();
-            sb.AppendLine("=== Registration ===");
-            sb.AppendLine($"State:   {_webRtcService.RegistrationState}");
-            sb.AppendLine($"Message: {_webRtcService.RegistrationMessage}");
-            sb.AppendLine();
-            sb.AppendLine("=== WebRTC Configuration ===");
-            sb.AppendLine($"Username:      {config.Username ?? "(not set)"}");
-            sb.AppendLine($"Signaling URL: {config.SignalingServerUrl ?? "(not set)"}");
-            sb.AppendLine($"STUN Server:   {config.StunServer ?? "(not set)"}");
-            sb.AppendLine($"TURN Server:   {config.TurnServer ?? "(not set)"}");
-            sb.AppendLine($"TURN Username: {config.TurnUsername ?? "(not set)"}");
-            sb.AppendLine($"ICE Servers:   {config.IceServers?.Count ?? 0}");
-            sb.AppendLine();
-            sb.AppendLine("=== Audio/Codec ===");
-            sb.AppendLine($"Audio Enabled:     {config.EnableAudio}");
-            sb.AppendLine($"Audio Codec:       {config.AudioCodecName ?? "(not set)"}");
-            sb.AppendLine($"Echo Cancellation: {config.EchoCancellation}");
-            sb.AppendLine($"Noise Suppression: {config.NoiseSuppression}");
-            sb.AppendLine($"Input Volume:      {config.InputVolume}");
-            sb.AppendLine($"Output Volume:     {config.OutputVolume}");
-            sb.AppendLine($"Video Enabled:     {config.EnableVideo}");
-            sb.AppendLine($"Video Codec:       {config.VideoCodecName ?? "(not set)"}");
-            sb.AppendLine();
-            sb.AppendLine("=== Active Call ===");
-            if (call == null)
-            {
-                sb.AppendLine("No active call");
-            }
-            else
-            {
-                sb.AppendLine($"Remote:   {call.RemoteParty}");
-                sb.AppendLine($"State:    {call.State}");
-                sb.AppendLine($"Duration: {_webRtcService.GetCallDuration()}");
-            }
+            sb.AppendLine($"Registration : {_webRtcService.RegistrationState}  |  {_webRtcService.RegistrationMessage}");
+            sb.AppendLine($"Signaling URL: {cfg.SignalingServerUrl ?? "(not set)"}  |  User: {cfg.Username ?? "(not set)"}");
+            sb.AppendLine($"STUN: {cfg.StunServer ?? "(not set)"}  |  TURN: {cfg.TurnServer ?? "(not set)"}  |  Codec: {cfg.AudioCodecName ?? "(not set)"}");
 
-            DebugText.Text = sb.ToString();
+            if (call != null)
+                sb.AppendLine($"Active call  : {call.State}  |  Remote: {call.RemoteParty}  |  Error: {call.ErrorMessage ?? "—"}");
+            else
+                sb.AppendLine("Active call  : none");
+
+            if (!string.IsNullOrEmpty(_webRtcService.LastCallFailureReason))
+                sb.AppendLine($"Last failure : {_webRtcService.LastCallFailureReason}");
+
+            StatusText.Text = sb.ToString().TrimEnd();
         }
+
+        // ── Log appenders ─────────────────────────────────────────────────────────
+
+        private void AppendSip(string direction, string raw)
+        {
+            try
+            {
+                var isSent = direction == ">>";
+                var normalized = (raw ?? "").Replace("\r\n", "\n").TrimEnd();
+                var lines  = normalized.Split('\n');
+                var first  = lines.Length > 0 ? lines[0].Trim() : "(empty)";
+
+                bool isError = !isSent && (first.StartsWith("SIP/2.0 4") ||
+                                           first.StartsWith("SIP/2.0 5") ||
+                                           first.StartsWith("SIP/2.0 6"));
+
+                var headerBrush = isError ? BrushError : isSent ? BrushSend : BrushRecv;
+
+                var para = new Paragraph { Margin = new Thickness(0, 3, 0, 0), LineHeight = 16 };
+
+                para.Inlines.Add(new Run($"[{DateTime.Now:HH:mm:ss.fff}] ")
+                    { Foreground = BrushTimestamp, FontSize = 10 });
+
+                para.Inlines.Add(new Run($"{direction} {first}")
+                    { Foreground = headerBrush, FontWeight = FontWeights.Bold });
+
+                // Indent remaining lines (headers + SDP body)
+                if (lines.Length > 1)
+                {
+                    var body = new StringBuilder();
+                    for (int i = 1; i < lines.Length; i++)
+                    {
+                        var l = lines[i].TrimEnd('\r');
+                        if (!string.IsNullOrEmpty(l))
+                            body.Append($"\n    {l}");
+                    }
+                    if (body.Length > 0)
+                        para.Inlines.Add(new Run(body.ToString()) { Foreground = BrushBody });
+                }
+
+                SipLog.Document.Blocks.Add(para);
+                SipLog.ScrollToEnd();
+            }
+            catch (Exception ex)
+            {
+                AppendInfo($"[log error: {ex.Message}]");
+            }
+        }
+
+        private void AppendInfo(string message)
+        {
+            try
+            {
+                var para = new Paragraph { Margin = new Thickness(0, 3, 0, 0), LineHeight = 16 };
+                para.Inlines.Add(new Run($"[{DateTime.Now:HH:mm:ss.fff}] ")
+                    { Foreground = BrushTimestamp, FontSize = 10 });
+                para.Inlines.Add(new Run(message) { Foreground = BrushInfo });
+                SipLog.Document.Blocks.Add(para);
+                SipLog.ScrollToEnd();
+            }
+            catch { /* swallow — never crash the window */ }
+        }
+
+        // ── Cleanup ───────────────────────────────────────────────────────────────
 
         protected override void OnClosed(EventArgs e)
         {
-            _webRtcService.RegistrationStateChanged -= OnStateChanged;
+            _webRtcService.RegistrationStateChanged -= OnRegistrationStateChanged;
+            _webRtcService.CallStateChanged         -= OnCallStateChanged;
+            _webRtcService.SipMessageLogged         -= OnSipMessageLogged;
             base.OnClosed(e);
         }
     }

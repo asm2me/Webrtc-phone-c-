@@ -67,6 +67,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <Label Grid.Row="0" Grid.Column="0" Content="Username:" VerticalAlignment="Center"/>
@@ -120,8 +121,15 @@
                                          Tag="wss://192.168.1.100:7443"
                                          ToolTip="FreeSWITCH Verto (mod_verto): wss://host:7443 or ws://host:8081"/>
 
-                                <Label Grid.Row="8" Grid.Column="0" Content="Auth Token:" VerticalAlignment="Center"/>
-                                <PasswordBox Grid.Row="8" Grid.Column="1" Height="28" Margin="0,4" Padding="5,4"
+                                <Label Grid.Row="8" Grid.Column="0" Content="SIP Domain:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="8" Grid.Column="1"
+                                         Style="{StaticResource PlaceholderTextBox}"
+                                         Text="{Binding SipDomain, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="e.g. 192.168.1.100 or pbx.example.com"
+                                         ToolTip="Override SIP domain used in From/To/Contact headers. Leave empty to auto-detect from the Signaling URL host."/>
+
+                                <Label Grid.Row="9" Grid.Column="0" Content="Auth Token:" VerticalAlignment="Center"/>
+                                <PasswordBox Grid.Row="9" Grid.Column="1" Height="28" Margin="0,4" Padding="5,4"
                                              x:Name="AuthTokenBox"
                                              ToolTip="Verto login token or API key (leave empty if not required)"/>
                             </Grid>
