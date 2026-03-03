@@ -48,6 +48,7 @@ namespace WebRtcPhoneDialer.Services
 
         // SIPSorcery core objects
         private SIPTransport?                _sipTransport;
+        private WssClientSipChannel?         _wssChannel;
         private SIPRegistrationUserAgent?    _regAgent;
         private SIPUserAgent?                _userAgent;
         private RTCPeerConnection?           _peerConnection;
@@ -161,10 +162,22 @@ namespace WebRtcPhoneDialer.Services
                                 ?? addresses.First();
                 var proxyEp   = new SIPEndPoint(SIPProtocolsEnum.wss, serverIp, sigUri.Port);
 
-                LogRtp($"Resolved {sigUri.Host} → {serverIp}  Outbound proxy: {proxyEp}");
+                // Determine local IP for Via/Contact headers
+                var localIp = GetLocalIpForRemote(serverIp);
+                var localSipEp = new SIPEndPoint(SIPProtocolsEnum.wss, localIp, 0);
+
+                LogRtp($"Resolved {sigUri.Host} → {serverIp}  Local: {localIp}  Proxy: {proxyEp}");
+                LogRtp($"Connecting WebSocket to {sigUri}");
+
+                // Create our custom channel that uses the FULL URI (including /ws path)
+                // and bypasses TLS certificate validation for self-signed certs
+                _wssChannel = new WssClientSipChannel(sigUri, localSipEp, proxyEp);
+                await _wssChannel.ConnectAsync();
+
+                LogRtp($"WebSocket connected — State: {_wssChannel != null}");
 
                 _sipTransport = new SIPTransport();
-                _sipTransport.AddSIPChannel(new SIPClientWebSocketChannel());
+                _sipTransport.AddSIPChannel(_wssChannel);
 
                 // Wire SIP message tracing → debug window
                 _sipTransport.SIPRequestInTraceEvent  += (_, _, req)  => LogSipReceived(req.ToString());
@@ -188,11 +201,13 @@ namespace WebRtcPhoneDialer.Services
 
                 _regAgent.Start();
 
+                LogRtp($"Registration agent started — {user}@{host}");
                 Logger.Info($"Registration started for {user}@{host} via {_config.SignalingServerUrl}");
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Registration setup failed");
+                LogRtp($"Registration error: {ex.GetType().Name}: {ex.Message}");
                 RegistrationMessage = $"Error: {ex.Message}";
                 SetRegistrationState(RegistrationState.Failed);
             }
@@ -211,6 +226,7 @@ namespace WebRtcPhoneDialer.Services
                         : failResponse != null ? $"{failResponse.Status} {failResponse.ReasonPhrase}"
                         : "unknown";
             RegistrationMessage = $"Registration failed: {reason}";
+            LogRtp($"[REG FAILED] {reason}");
             SetRegistrationState(RegistrationState.Failed);
             Logger.Warn($"SIP registration failed: {reason}");
         }
@@ -421,6 +437,24 @@ namespace WebRtcPhoneDialer.Services
             return DateTime.Now - _callStartTime;
         }
 
+        /// <summary>
+        /// Returns the local IP address that the OS would use to reach <paramref name="remoteIp"/>.
+        /// Uses a connected UDP socket (no actual packet sent) to determine the best local interface.
+        /// </summary>
+        private static IPAddress GetLocalIpForRemote(IPAddress remoteIp)
+        {
+            try
+            {
+                using var s = new Socket(remoteIp.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+                s.Connect(remoteIp, 80);
+                return ((IPEndPoint)s.LocalEndPoint!).Address;
+            }
+            catch
+            {
+                return IPAddress.Loopback;
+            }
+        }
+
         private void SetRegistrationState(RegistrationState state)
         {
             RegistrationState = state;
@@ -494,6 +528,9 @@ namespace WebRtcPhoneDialer.Services
                 try { _sipTransport.Shutdown(); } catch { }
                 _sipTransport = null;
             }
+
+            try { _wssChannel?.Close(); } catch { }
+            _wssChannel = null;
         }
 
         public void Dispose()
