@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build \"WebRtcPhoneDialer.csproj\")",
-      "Bash(taskkill /PID 16140 /F)"
+      "Bash(taskkill /PID 16140 /F)",
+      "Bash(dotnet build --project \"WebRtcPhoneDialer.csproj\")",
+      "Bash(dotnet build)",
+      "Read(//c/Users/asm2m/.nuget/packages/sipsorcery/8.0.0/lib/net6.0/**)",
+      "Read(//T:SIPSorcery.SIP.App.SIPRegistrationUserAgent/,/T:SIPSorcery.SIP.App.SIPNotifierClient/**)",
+      "Read(//c/Users/asm2m/.nuget/packages/sipsorcery/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\asm2m\\.claude\\projects\\c--Users-asm2m-Webrtc-c-"

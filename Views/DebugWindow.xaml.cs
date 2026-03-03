@@ -16,11 +16,12 @@ namespace WebRtcPhoneDialer.Views
 
         // Colour palette (dark-terminal theme)
         private static readonly SolidColorBrush BrushTimestamp = new(Color.FromRgb(0x80, 0x80, 0x80));
-        private static readonly SolidColorBrush BrushSend      = new(Color.FromRgb(0x56, 0x9C, 0xD6)); // blue  — sent
-        private static readonly SolidColorBrush BrushRecv      = new(Color.FromRgb(0x6A, 0x99, 0x55)); // green — received
+        private static readonly SolidColorBrush BrushSend      = new(Color.FromRgb(0x56, 0x9C, 0xD6)); // blue  — sent SIP
+        private static readonly SolidColorBrush BrushRecv      = new(Color.FromRgb(0x6A, 0x99, 0x55)); // green — received SIP
         private static readonly SolidColorBrush BrushError     = new(Color.FromRgb(0xF4, 0x47, 0x47)); // red   — 4xx/5xx/6xx
         private static readonly SolidColorBrush BrushInfo      = new(Color.FromRgb(0xFF, 0xD7, 0x00)); // yellow — events
         private static readonly SolidColorBrush BrushBody      = new(Color.FromRgb(0xCC, 0xCC, 0xCC)); // light grey — headers/SDP
+        private static readonly SolidColorBrush BrushRtp       = new(Color.FromRgb(0x4E, 0xC9, 0xB0)); // cyan — RTP debug
 
         public DebugWindow(WebRtcService webRtcService)
         {
@@ -34,6 +35,7 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.RegistrationStateChanged += OnRegistrationStateChanged;
             _webRtcService.CallStateChanged         += OnCallStateChanged;
             _webRtcService.SipMessageLogged         += OnSipMessageLogged;
+            _webRtcService.RtpDebugLogged           += OnRtpDebugLogged;
 
             RefreshStatus();
 
@@ -42,7 +44,11 @@ namespace WebRtcPhoneDialer.Views
             AppendInfo("=== SIP log — replaying history ===");
             foreach (var entry in _webRtcService.GetSipLogHistory())
                 AppendSip(entry.Direction, entry.Message);
-            AppendInfo("=== live traffic below ===");
+            AppendInfo("=== live SIP traffic below ===");
+
+            // Replay any buffered RTP events (e.g. call already in progress)
+            foreach (var entry in _webRtcService.GetRtpLogHistory())
+                AppendRtp(entry.Message);
         }
 
         // ── Event handlers ────────────────────────────────────────────────────────
@@ -64,10 +70,15 @@ namespace WebRtcPhoneDialer.Views
 
         private void OnSipMessageLogged(object? sender, SipLogEventArgs e)
         {
-            // Capture values before crossing thread boundary
             var dir = e.Direction;
             var msg = e.Message;
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => AppendSip(dir, msg)));
+        }
+
+        private void OnRtpDebugLogged(object? sender, RtpLogEventArgs e)
+        {
+            var msg = e.Message;
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => AppendRtp(msg)));
         }
 
         // ── Button handlers ───────────────────────────────────────────────────────
@@ -151,6 +162,21 @@ namespace WebRtcPhoneDialer.Views
             }
         }
 
+        private void AppendRtp(string message)
+        {
+            try
+            {
+                var para = new Paragraph { Margin = new Thickness(0, 2, 0, 0), LineHeight = 15 };
+                para.Inlines.Add(new Run($"[{DateTime.Now:HH:mm:ss.fff}] ")
+                    { Foreground = BrushTimestamp, FontSize = 10 });
+                para.Inlines.Add(new Run("[RTP] ") { Foreground = BrushRtp, FontWeight = FontWeights.Bold });
+                para.Inlines.Add(new Run(message) { Foreground = BrushRtp });
+                SipLog.Document.Blocks.Add(para);
+                SipLog.ScrollToEnd();
+            }
+            catch { /* swallow — never crash the window */ }
+        }
+
         private void AppendInfo(string message)
         {
             try
@@ -172,6 +198,7 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.RegistrationStateChanged -= OnRegistrationStateChanged;
             _webRtcService.CallStateChanged         -= OnCallStateChanged;
             _webRtcService.SipMessageLogged         -= OnSipMessageLogged;
+            _webRtcService.RtpDebugLogged           -= OnRtpDebugLogged;
             base.OnClosed(e);
         }
     }
