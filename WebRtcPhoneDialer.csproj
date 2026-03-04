@@ -16,10 +16,13 @@
     <PackageReference Include="RestSharp" Version="107.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="NLog" Version="5.2.7" />
+    <!-- Pin logging to 8.x to match SIPSorcery 8.0.0 compiled dependencies -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <!-- WebRTC / SIP stack: handles ICE, DTLS-SRTP, SIP signaling over WebSocket -->
     <PackageReference Include="SIPSorcery" Version="8.0.0" />
     <!-- Windows audio endpoints (microphone + speaker) via NAudio -->
-    <PackageReference Include="SIPSorceryMedia.Windows" Version="6.0.4" />
+    <PackageReference Include="SIPSorceryMedia.Windows" Version="6.0.5" />
   </ItemGroup>
 
   <ItemGroup>

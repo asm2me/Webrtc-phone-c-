@@ -12,9 +12,6 @@ using SIPSorceryMedia.Abstractions;
 using SIPSorceryMedia.Windows;
 using WebRtcPhoneDialer.Models;
 
-// Alias to avoid ambiguity with SIPSorcery.Net.IceServer
-using AppIceServer = WebRtcPhoneDialer.Models.IceServer;
-
 namespace WebRtcPhoneDialer.Services
 {
     public enum RegistrationState { Unregistered, Registering, Registered, Failed }
@@ -51,7 +48,9 @@ namespace WebRtcPhoneDialer.Services
         private WssClientSipChannel?         _wssChannel;
         private SIPRegistrationUserAgent?    _regAgent;
         private SIPUserAgent?                _userAgent;
-        private RTCPeerConnection?           _peerConnection;
+        private SIPEndPoint?                 _proxyEp;
+        private IPAddress?                   _localIp;
+        private RTPSession?                  _mediaSession;
         private WindowsAudioEndPoint?        _audioEndPoint;
 
         // Circular buffers for Debug window replay
@@ -93,14 +92,6 @@ namespace WebRtcPhoneDialer.Services
 
         public WebRtcConfiguration GetConfiguration() => _config;
 
-        public void ConfigureServers(string stunServer, string[] iceServers)
-        {
-            _config.StunServer = stunServer;
-            _config.IceServers.Clear();
-            foreach (var url in iceServers.Where(s => !string.IsNullOrWhiteSpace(s)))
-                _config.IceServers.Add(new AppIceServer { Url = url.Trim() });
-        }
-
         public void Configure(AppSettings settings)
         {
             _config.Username          = settings.Username;
@@ -121,14 +112,6 @@ namespace WebRtcPhoneDialer.Services
             _config.VideoCodecName    = settings.VideoCodecName;
 
             _sipDomain = string.IsNullOrWhiteSpace(settings.SipDomain) ? null : settings.SipDomain.Trim();
-
-            _config.IceServers.Clear();
-            foreach (var line in settings.IceServers.Split('\n'))
-            {
-                var url = line.Trim();
-                if (!string.IsNullOrEmpty(url))
-                    _config.IceServers.Add(new AppIceServer { Url = url });
-            }
 
             Logger.Info($"Configuration applied: Signaling={settings.SignalingServerUrl}");
         }
@@ -161,9 +144,11 @@ namespace WebRtcPhoneDialer.Services
                 var serverIp  = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)
                                 ?? addresses.First();
                 var proxyEp   = new SIPEndPoint(SIPProtocolsEnum.wss, serverIp, sigUri.Port);
+                _proxyEp = proxyEp;
 
-                // Determine local IP for Via/Contact headers
+                // Determine local IP for Via/Contact headers + RTP session bind address
                 var localIp = GetLocalIpForRemote(serverIp);
+                _localIp = localIp;
                 var localSipEp = new SIPEndPoint(SIPProtocolsEnum.wss, localIp, 0);
 
                 LogRtp($"Resolved {sigUri.Host} → {serverIp}  Local: {localIp}  Proxy: {proxyEp}");
@@ -184,14 +169,6 @@ namespace WebRtcPhoneDialer.Services
                 _sipTransport.SIPResponseInTraceEvent += (_, _, resp) => LogSipReceived(resp.ToString());
                 _sipTransport.SIPRequestOutTraceEvent  += (_, _, req)  => LogSipSent(req.ToString());
                 _sipTransport.SIPResponseOutTraceEvent += (_, _, resp) => LogSipSent(resp.ToString());
-
-                // SIPUserAgent (for outbound calls)
-                _userAgent = new SIPUserAgent(_sipTransport, proxyEp, false, null);
-                _userAgent.OnCallHungup      += OnRemoteHangup;
-                _userAgent.ClientCallAnswered += OnCallAnswered;
-                _userAgent.ClientCallFailed  += OnCallFailed;
-                _userAgent.ClientCallRinging += OnCallRinging;
-                _userAgent.ClientCallTrying  += (_, _) => Logger.Debug("INVITE 100 Trying");
 
                 // Registration agent (handles REGISTER + auth challenge + keep-alive)
                 _regAgent = new SIPRegistrationUserAgent(_sipTransport, user, pass, $"sip:{user}@{host}", 3600);
@@ -235,7 +212,7 @@ namespace WebRtcPhoneDialer.Services
 
         public async Task InitiateCallAsync(string remoteParty)
         {
-            if (_userAgent == null)
+            if (_sipTransport == null || _proxyEp == null)
                 throw new InvalidOperationException("Not connected. Please register first.");
 
             if (_currentCall != null &&
@@ -255,21 +232,45 @@ namespace WebRtcPhoneDialer.Services
             };
             SetCallState(CallState.Initiating);
 
-            _peerConnection = BuildPeerConnection();
+            // Recreate SIPUserAgent for each call — reusing the same instance after a
+            // failed call can leave SIPSorcery's internal transaction state corrupt.
+            _userAgent = new SIPUserAgent(_sipTransport, _proxyEp, false, null);
+            _userAgent.OnCallHungup      += OnRemoteHangup;
+            _userAgent.ClientCallAnswered += OnCallAnswered;
+            _userAgent.ClientCallFailed  += OnCallFailed;
+            _userAgent.ClientCallRinging += OnCallRinging;
+            _userAgent.ClientCallTrying  += (_, _) => Logger.Debug("INVITE 100 Trying");
+
+            _mediaSession = BuildMediaSession();
 
             var callUri = SIPURI.ParseSIPURIRelaxed($"sip:{remoteParty}@{host}");
             Logger.Info($"Calling {callUri}");
-            LogRtp("WebRTC peer connection created — ICE gathering started");
+            LogRtp("VoIP media session created (RTP/AVP)");
 
-            // SIPSorcery handles: SDP offer, ICE, DTLS handshake, 401 re-auth, ACK
-            bool result = await _userAgent.Call(callUri.ToString(), null, null, _peerConnection);
+            // SIPSorcery handles: SDP offer, 407 re-auth, ACK
+            bool result;
+            try
+            {
+                result = await _userAgent.Call(callUri.ToString(), _config.Username, _config.Password, _mediaSession);
+            }
+            catch (Exception ex)
+            {
+                LogRtp($"[CALL EXCEPTION] {ex.GetType().Name}: {ex.Message}");
+                LogRtp(ex.StackTrace ?? "(no stack trace)");
+                Logger.Error(ex, "Call() threw an exception");
+                CleanupMedia();
+                _currentCall.ErrorMessage = ex.Message;
+                SetCallState(CallState.Failed);
+                _currentCall = null;
+                return;
+            }
             if (!result)
-                Logger.Warn("Call initiation returned false — waiting for callbacks");
+                LogRtp("[CALL] Call() returned false — waiting for callbacks");
         }
 
-        public async Task EndCallAsync()
+        public Task EndCallAsync()
         {
-            if (_currentCall == null) return;
+            if (_currentCall == null) return Task.CompletedTask;
             _currentCall.EndTime = DateTime.Now;
             try
             {
@@ -281,7 +282,7 @@ namespace WebRtcPhoneDialer.Services
             CleanupMedia();
             SetCallState(CallState.Ended);
             _currentCall = null;
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
 
         // ── SIPUserAgent call-state callbacks ─────────────────────────────────────
@@ -303,7 +304,9 @@ namespace WebRtcPhoneDialer.Services
         private void OnCallFailed(ISIPClientUserAgent uac, string reason, SIPResponse? failResponse)
         {
             LastCallFailureReason = reason;
-            Logger.Warn($"Call failed: {reason}");
+            var statusCode = failResponse != null ? $" ({(int)failResponse.Status} {failResponse.ReasonPhrase})" : "";
+            Logger.Warn($"Call failed: {reason}{statusCode}");
+            LogRtp($"[CALL FAILED] {reason}{statusCode}");
             if (_currentCall != null) _currentCall.ErrorMessage = reason;
             CleanupMedia();
             SetCallState(CallState.Failed);
@@ -322,31 +325,18 @@ namespace WebRtcPhoneDialer.Services
             }
         }
 
-        // ── WebRTC peer connection ─────────────────────────────────────────────────
+        // ── Media session (plain RTP/AVP — compatible with standard SIP proxies) ──────
 
-        private RTCPeerConnection BuildPeerConnection()
+        private RTPSession BuildMediaSession()
         {
-            var iceServers = new List<RTCIceServer>();
-
-            if (!string.IsNullOrWhiteSpace(_config.StunServer))
-                iceServers.Add(new RTCIceServer { urls = _config.StunServer });
-
-            if (!string.IsNullOrWhiteSpace(_config.TurnServer))
-                iceServers.Add(new RTCIceServer
-                {
-                    urls       = _config.TurnServer,
-                    username   = _config.TurnUsername,
-                    credential = _config.TurnPassword
-                });
-
-            foreach (var ice in _config.IceServers.Where(s => !string.IsNullOrWhiteSpace(s.Url)))
-                if (iceServers.All(x => x.urls != ice.Url))
-                    iceServers.Add(new RTCIceServer { urls = ice.Url! });
-
-            if (iceServers.Count == 0)
-                iceServers.Add(new RTCIceServer { urls = "stun:stun.l.google.com:19302" });
-
-            var pc = new RTCPeerConnection(new RTCConfiguration { iceServers = iceServers });
+            // Plain RTP session — no DTLS, no ICE, produces RTP/AVP SDP.
+            // Constructor: RTPSession(isMediaMultiplexed, isRtcpMultiplexed, isSecure, bindAddress)
+            // isMediaMultiplexed=false → each media type gets its own RTP port (standard SIP).
+            //   Setting true causes NRE in GetSessionDescription because m_primaryStream is null
+            //   until Start() is called (accessed via m_primaryStream.GetRTPChannel().RTPPort).
+            // bindAddress=_localIp → supplies the SDP c= line when SIPUserAgent passes null
+            //   to CreateOffer() (WSS transport has no resolvable local IP endpoint).
+            var session = new RTPSession(false, false, false, _localIp ?? IPAddress.Any);
 
             // Windows audio: microphone → encode → RTP; RTP → decode → speaker
             _audioEndPoint = new WindowsAudioEndPoint(new AudioEncoder(), -1, -1, false, false);
@@ -356,11 +346,11 @@ namespace WebRtcPhoneDialer.Services
             var audioTrack = new MediaStreamTrack(
                 _audioEndPoint.GetAudioSourceFormats(),
                 MediaStreamStatusEnum.SendRecv);
-            pc.addTrack(audioTrack);
+            session.addTrack(audioTrack);
 
-            _audioEndPoint.OnAudioSourceEncodedSample += pc.SendAudio;
+            _audioEndPoint.OnAudioSourceEncodedSample += session.SendAudio;
 
-            pc.OnAudioFormatsNegotiated += formats =>
+            session.OnAudioFormatsNegotiated += formats =>
             {
                 var fmt = formats.First();
                 _audioEndPoint.SetAudioSourceFormat(fmt);
@@ -368,7 +358,7 @@ namespace WebRtcPhoneDialer.Services
                 LogRtp($"Audio codec negotiated: {fmt.Codec} PT={fmt.FormatID}");
             };
 
-            pc.OnRtpPacketReceived += (ep, media, pkt) =>
+            session.OnRtpPacketReceived += (ep, media, pkt) =>
             {
                 if (media == SDPMediaTypesEnum.audio)
                     _audioEndPoint?.GotAudioRtp(ep,
@@ -380,20 +370,7 @@ namespace WebRtcPhoneDialer.Services
                         pkt.Payload);
             };
 
-            // ICE / DTLS state logging
-            pc.oniceconnectionstatechange += state =>
-                LogRtp($"ICE connection: {state}");
-
-            pc.onconnectionstatechange += state =>
-                LogRtp($"WebRTC connection: {state}");
-
-            pc.onicecandidate += candidate =>
-            {
-                if (candidate != null)
-                    LogRtp($"ICE candidate: {candidate.candidate}");
-            };
-
-            return pc;
+            return session;
         }
 
         private void StartAudio()
@@ -419,10 +396,10 @@ namespace WebRtcPhoneDialer.Services
                 LogRtp("Audio endpoint closed");
             }
 
-            if (_peerConnection != null)
+            if (_mediaSession != null)
             {
-                try { _peerConnection.Close("call ended"); } catch { }
-                _peerConnection = null;
+                try { _mediaSession.Close("call ended"); } catch { }
+                _mediaSession = null;
             }
         }
 
@@ -472,27 +449,18 @@ namespace WebRtcPhoneDialer.Services
 
         // ── Logging helpers ───────────────────────────────────────────────────────
 
-        private void LogSipSent(string message)
-        {
-            var entry = new SipLogEventArgs(">>", message);
-            lock (_sipLogBuffer)
-            {
-                _sipLogBuffer.Enqueue(entry);
-                while (_sipLogBuffer.Count > SipLogBufferMax) _sipLogBuffer.Dequeue();
-            }
-            Logger.Debug($"SIP SEND: {FirstLine(message)}");
-            SipMessageLogged?.Invoke(this, entry);
-        }
+        private void LogSipSent(string message)     => LogSip(">>", message);
+        private void LogSipReceived(string message)  => LogSip("<<", message);
 
-        private void LogSipReceived(string message)
+        private void LogSip(string direction, string message)
         {
-            var entry = new SipLogEventArgs("<<", message);
+            var entry = new SipLogEventArgs(direction, message);
             lock (_sipLogBuffer)
             {
                 _sipLogBuffer.Enqueue(entry);
                 while (_sipLogBuffer.Count > SipLogBufferMax) _sipLogBuffer.Dequeue();
             }
-            Logger.Debug($"SIP RECV: {FirstLine(message)}");
+            Logger.Debug($"SIP {(direction == ">>" ? "SEND" : "RECV")}: {FirstLine(message)}");
             SipMessageLogged?.Invoke(this, entry);
         }
 
@@ -508,8 +476,11 @@ namespace WebRtcPhoneDialer.Services
             RtpDebugLogged?.Invoke(this, entry);
         }
 
-        private static string FirstLine(string msg) =>
-            msg.Split('\n')[0].Trim();
+        private static string FirstLine(string msg)
+        {
+            var i = msg.IndexOf('\n');
+            return (i < 0 ? msg : msg[..i]).Trim();
+        }
 
         // ── Teardown ──────────────────────────────────────────────────────────────
 
@@ -522,6 +493,8 @@ namespace WebRtcPhoneDialer.Services
 
             try { if (_userAgent?.IsCallActive == true) _userAgent.Hangup(); } catch { }
             _userAgent = null;
+            _proxyEp   = null;
+            _localIp   = null;
 
             if (_sipTransport != null)
             {
