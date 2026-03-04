@@ -776,6 +776,33 @@ namespace WebRtcPhoneDialer.Services
         public CallSession?  GetCurrentCall() => _currentCall;
         public IPAddress?    GetPublicIp()    => _publicIp;
 
+        public bool HasActiveCall =>
+            _currentCall != null &&
+            (_currentCall.State == CallState.Initiating ||
+             _currentCall.State == CallState.Ringing ||
+             _currentCall.State == CallState.Connected);
+
+        public bool IsRegistered => RegistrationState == RegistrationState.Registered;
+
+        public void Unregister()
+        {
+            if (_regAgent != null)
+            {
+                try
+                {
+                    _regAgent.Stop();
+                    LogRtp("SIP unregistered on exit");
+                    Logger.Info("SIP unregistered");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Error during unregister");
+                }
+                _regAgent = null;
+                SetRegistrationState(RegistrationState.Unregistered);
+            }
+        }
+
         public (long sent, long recv, long bytesSent, long bytesRecv) GetRtpStats()
             => (Interlocked.Read(ref _rtpPacketsSent),
                 Interlocked.Read(ref _rtpPacketsReceived),

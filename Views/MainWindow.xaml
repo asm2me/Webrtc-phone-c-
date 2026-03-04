@@ -4,7 +4,7 @@
         Title="WebRTC Phone Dialer" Height="600" Width="800"
         WindowStartupLocation="CenterScreen"
         Background="#F5F5F5"
-        Closed="Window_Closed">
+        Closing="Window_Closing">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

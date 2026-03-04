@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -198,9 +199,38 @@ namespace WebRtcPhoneDialer.Views
             }
         }
 
-        private void Window_Closed(object sender, EventArgs e)
+        private async void Window_Closing(object sender, CancelEventArgs e)
         {
-            _webRtcService?.Dispose();
+            if (_webRtcService == null) return;
+
+            // If there's an active call, ask for confirmation
+            if (_webRtcService.HasActiveCall)
+            {
+                var result = MessageBox.Show(
+                    "A call is currently active. Hang up and exit?",
+                    "Active Call",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.No)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                // Hang up the active call
+                try
+                {
+                    await _webRtcService.EndCallAsync();
+                }
+                catch { }
+            }
+
+            // Unregister from SIP server
+            _webRtcService.Unregister();
+
+            // Dispose all resources
+            _webRtcService.Dispose();
         }
     }
 }
