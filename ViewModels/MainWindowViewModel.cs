@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using WebRtcPhoneDialer.Models;
 using WebRtcPhoneDialer.Services;
 
 namespace WebRtcPhoneDialer.ViewModels
@@ -6,11 +8,24 @@ namespace WebRtcPhoneDialer.ViewModels
     public class MainWindowViewModel : BaseViewModel
     {
         private readonly WebRtcService _webRtcService;
+        private readonly CallHistoryService _callHistoryService = new CallHistoryService();
         private string _phoneNumber = string.Empty;
         private string _callStatus = "Ready";
         private bool _isCallActive = false;
 
-        public ObservableCollection<string> CallHistory { get; } = new ObservableCollection<string>();
+        public ObservableCollection<CallSession> CallHistory { get; } = new ObservableCollection<CallSession>();
+
+        public void AddCallToHistory(CallSession call)
+        {
+            _callHistoryService.AddCall(call);
+            CallHistory.Insert(0, call); // newest first
+        }
+
+        public void ClearCallHistory()
+        {
+            _callHistoryService.ClearHistory();
+            CallHistory.Clear();
+        }
 
         public string PhoneNumber
         {

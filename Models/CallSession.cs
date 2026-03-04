@@ -10,6 +10,43 @@ namespace WebRtcPhoneDialer.Models
         public DateTime? EndTime { get; set; }
         public CallState State { get; set; } = CallState.Idle;
         public string? ErrorMessage { get; set; }
+
+        public string DurationDisplay
+        {
+            get
+            {
+                if (!EndTime.HasValue) return "--:--";
+                var d = EndTime.Value - StartTime;
+                return d.TotalHours >= 1
+                    ? $"{(int)d.TotalHours}:{d.Minutes:D2}:{d.Seconds:D2}"
+                    : $"{d.Minutes}:{d.Seconds:D2}";
+            }
+        }
+
+        public string DateDisplay
+        {
+            get
+            {
+                if (StartTime.Date == DateTime.Today)
+                    return StartTime.ToString("HH:mm");
+                if (StartTime.Date == DateTime.Today.AddDays(-1))
+                    return "Yesterday " + StartTime.ToString("HH:mm");
+                return StartTime.ToString("MMM dd, HH:mm");
+            }
+        }
+
+        public string StateDisplay
+        {
+            get
+            {
+                return State switch
+                {
+                    CallState.Ended => "Completed",
+                    CallState.Failed => ErrorMessage ?? "Failed",
+                    _ => State.ToString()
+                };
+            }
+        }
     }
 
     public enum CallState

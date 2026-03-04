@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using WebRtcPhoneDialer.Models;
 using WebRtcPhoneDialer.Services;
@@ -15,6 +16,7 @@ namespace WebRtcPhoneDialer.Views
         private WebRtcService _webRtcService;
         private System.Windows.Threading.DispatcherTimer _callTimer;
         private AppSettings _settings;
+        private CallSession? _currentCall;
 
         public MainWindow()
         {
@@ -76,12 +78,25 @@ namespace WebRtcPhoneDialer.Views
             CallStatusText.Text = $"Calling {phoneNumber}...";
             CallStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xAB, 0x00));
 
+            _currentCall = new CallSession
+            {
+                RemoteParty = phoneNumber,
+                StartTime = DateTime.Now,
+                State = CallState.Initiating
+            };
+
             try
             {
                 await _webRtcService.InitiateCallAsync(phoneNumber);
             }
             catch (Exception ex)
             {
+                _currentCall.State = CallState.Failed;
+                _currentCall.EndTime = DateTime.Now;
+                _currentCall.ErrorMessage = ex.Message;
+                _viewModel.AddCallToHistory(_currentCall);
+                _currentCall = null;
+
                 CallStatusText.Text = "Call failed";
                 CallButton.IsEnabled = true;
                 HangupButton.IsEnabled = false;
@@ -105,6 +120,49 @@ namespace WebRtcPhoneDialer.Views
         private void Clear_Click(object sender, RoutedEventArgs e)
         {
             PhoneNumberInput.Clear();
+        }
+
+        private void ClearHistory_Click(object sender, RoutedEventArgs e)
+        {
+            _viewModel.ClearCallHistory();
+        }
+
+        private void CallHistoryList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (CallHistoryList.SelectedItem is CallSession call)
+            {
+                DialFromHistory(call.RemoteParty);
+            }
+        }
+
+        private void HistoryDial_Click(object sender, RoutedEventArgs e)
+        {
+            if (CallHistoryList.SelectedItem is CallSession call)
+            {
+                DialFromHistory(call.RemoteParty);
+            }
+        }
+
+        private void HistoryCopyNumber_Click(object sender, RoutedEventArgs e)
+        {
+            if (CallHistoryList.SelectedItem is CallSession call)
+            {
+                Clipboard.SetText(call.RemoteParty);
+            }
+        }
+
+        private void HistoryRemove_Click(object sender, RoutedEventArgs e)
+        {
+            if (CallHistoryList.SelectedItem is CallSession call)
+            {
+                _viewModel.CallHistory.Remove(call);
+            }
+        }
+
+        private void DialFromHistory(string number)
+        {
+            PhoneNumberInput.Text = number;
+            CallButton_Click(this, new RoutedEventArgs());
         }
 
         private void CallTimer_Tick(object? sender, EventArgs e)
@@ -176,6 +234,9 @@ namespace WebRtcPhoneDialer.Views
 
         private void UpdateCallStatus(CallState state)
         {
+            if (_currentCall != null)
+                _currentCall.State = state;
+
             switch (state)
             {
                 case CallState.Initiating:
@@ -198,6 +259,12 @@ namespace WebRtcPhoneDialer.Views
                     break;
                 case CallState.Ended:
                     _callTimer.Stop();
+                    if (_currentCall != null)
+                    {
+                        _currentCall.EndTime = DateTime.Now;
+                        _viewModel.AddCallToHistory(_currentCall);
+                        _currentCall = null;
+                    }
                     CallStatusText.Text = "Call ended";
                     CallStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xEE));
                     CallDurationText.Text = "00:00:00";
@@ -207,6 +274,12 @@ namespace WebRtcPhoneDialer.Views
                     break;
                 case CallState.Failed:
                     _callTimer.Stop();
+                    if (_currentCall != null)
+                    {
+                        _currentCall.EndTime = DateTime.Now;
+                        _viewModel.AddCallToHistory(_currentCall);
+                        _currentCall = null;
+                    }
                     CallStatusText.Text = "Call failed";
                     CallStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x17, 0x44));
                     CallDurationText.Text = "00:00:00";
