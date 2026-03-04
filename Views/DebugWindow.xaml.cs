@@ -36,6 +36,8 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.CallStateChanged         += OnCallStateChanged;
             _webRtcService.SipMessageLogged         += OnSipMessageLogged;
             _webRtcService.RtpDebugLogged           += OnRtpDebugLogged;
+            _webRtcService.MicLevelChanged          += OnMicLevelChanged;
+            _webRtcService.SpeakerLevelChanged      += OnSpeakerLevelChanged;
 
             RefreshStatus();
 
@@ -81,6 +83,26 @@ namespace WebRtcPhoneDialer.Views
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => AppendRtp(msg)));
         }
 
+        private void OnMicLevelChanged(object? sender, float level)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            {
+                var pct = (int)(level * 100);
+                MicLevelBar.Value = pct;
+                MicLevelText.Text = $"{pct}%";
+            }));
+        }
+
+        private void OnSpeakerLevelChanged(object? sender, float level)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            {
+                var pct = (int)(level * 100);
+                SpeakerLevelBar.Value = pct;
+                SpeakerLevelText.Text = $"{pct}%";
+            }));
+        }
+
         // ── Button handlers ───────────────────────────────────────────────────────
 
         private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshStatus();
@@ -97,14 +119,20 @@ namespace WebRtcPhoneDialer.Views
         {
             var cfg  = _webRtcService.GetConfiguration();
             var call = _webRtcService.GetCurrentCall();
+            var publicIp = _webRtcService.GetPublicIp();
+            var stats = _webRtcService.GetRtpStats();
 
             var sb = new StringBuilder();
             sb.AppendLine($"Registration : {_webRtcService.RegistrationState}  |  {_webRtcService.RegistrationMessage}");
             sb.AppendLine($"Signaling URL: {cfg.SignalingServerUrl ?? "(not set)"}  |  User: {cfg.Username ?? "(not set)"}");
             sb.AppendLine($"STUN: {cfg.StunServer ?? "(not set)"}  |  TURN: {cfg.TurnServer ?? "(not set)"}  |  Codec: {cfg.AudioCodecName ?? "(not set)"}");
+            sb.AppendLine($"Public IP    : {publicIp?.ToString() ?? "(not discovered)"}");
 
             if (call != null)
+            {
                 sb.AppendLine($"Active call  : {call.State}  |  Remote: {call.RemoteParty}  |  Error: {call.ErrorMessage ?? "—"}");
+                sb.AppendLine($"RTP stats    : Sent: {stats.sent} pkts ({stats.bytesSent / 1024}KB)  |  Recv: {stats.recv} pkts ({stats.bytesRecv / 1024}KB)");
+            }
             else
                 sb.AppendLine("Active call  : none");
 
@@ -199,6 +227,8 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.CallStateChanged         -= OnCallStateChanged;
             _webRtcService.SipMessageLogged         -= OnSipMessageLogged;
             _webRtcService.RtpDebugLogged           -= OnRtpDebugLogged;
+            _webRtcService.MicLevelChanged          -= OnMicLevelChanged;
+            _webRtcService.SpeakerLevelChanged      -= OnSpeakerLevelChanged;
             base.OnClosed(e);
         }
     }
