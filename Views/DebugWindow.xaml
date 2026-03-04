@@ -3,8 +3,33 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Debug / SIP Log" Height="620" Width="740"
         WindowStartupLocation="CenterOwner"
-        Background="#F0F0F0">
-    <Grid Margin="10">
+        Background="#0D0D1A">
+
+    <Window.Resources>
+        <Style x:Key="DebugBtn" TargetType="Button">
+            <Setter Property="Foreground" Value="#CCCCEE"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" CornerRadius="4" Padding="12,5"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -13,64 +38,89 @@
         </Grid.RowDefinitions>
 
         <!-- Status summary -->
-        <GroupBox Grid.Row="0" Header="Status" Margin="0,0,0,6" Padding="8,6">
-            <TextBlock x:Name="StatusText"
-                       FontFamily="Consolas" FontSize="11"
-                       TextWrapping="Wrap" LineHeight="18"/>
-        </GroupBox>
+        <Border Grid.Row="0" Background="#12122A" CornerRadius="6" Padding="12,10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="Status" FontSize="12" FontWeight="SemiBold" Foreground="#8888AA" Margin="0,0,0,6"/>
+                <TextBlock x:Name="StatusText"
+                           FontFamily="Consolas" FontSize="11"
+                           Foreground="#CCCCEE"
+                           TextWrapping="Wrap" LineHeight="18"/>
+            </StackPanel>
+        </Border>
 
         <!-- Audio level meters -->
-        <GroupBox Grid.Row="1" Header="Audio Levels" Margin="0,0,0,6" Padding="8,4">
+        <Border Grid.Row="1" Background="#12122A" CornerRadius="6" Padding="12,10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="Audio Levels" FontSize="12" FontWeight="SemiBold" Foreground="#8888AA" Margin="0,0,0,8"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="62"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="42"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Mic:"
+                               FontFamily="Consolas" FontSize="11" Foreground="#AAAACC" VerticalAlignment="Center"/>
+                    <ProgressBar Grid.Row="0" Grid.Column="1" x:Name="MicLevelBar"
+                                 Height="10" Margin="4,3" Minimum="0" Maximum="100" Value="0"
+                                 Foreground="#00E676" Background="#1A1A2E"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="MicLevelText"
+                               FontFamily="Consolas" FontSize="10" Foreground="#8888AA"
+                               VerticalAlignment="Center" HorizontalAlignment="Right" Text="0%"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Speaker:"
+                               FontFamily="Consolas" FontSize="11" Foreground="#AAAACC" VerticalAlignment="Center"/>
+                    <ProgressBar Grid.Row="1" Grid.Column="1" x:Name="SpeakerLevelBar"
+                                 Height="10" Margin="4,3" Minimum="0" Maximum="100" Value="0"
+                                 Foreground="#536DFE" Background="#1A1A2E"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="SpeakerLevelText"
+                               FontFamily="Consolas" FontSize="10" Foreground="#8888AA"
+                               VerticalAlignment="Center" HorizontalAlignment="Right" Text="0%"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- SIP traffic log (dark terminal style) -->
+        <Border Grid.Row="2" Background="#08081A" CornerRadius="6" Padding="0" ClipToBounds="True">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="62"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="42"/>
-                </Grid.ColumnDefinitions>
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Mic:"
-                           FontFamily="Consolas" FontSize="11" VerticalAlignment="Center"/>
-                <ProgressBar Grid.Row="0" Grid.Column="1" x:Name="MicLevelBar"
-                             Height="14" Margin="4,2" Minimum="0" Maximum="100" Value="0"
-                             Foreground="#4EC9B0" Background="#1E1E1E"/>
-                <TextBlock Grid.Row="0" Grid.Column="2" x:Name="MicLevelText"
-                           FontFamily="Consolas" FontSize="10" VerticalAlignment="Center"
-                           HorizontalAlignment="Right" Text="0%"/>
-
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Speaker:"
-                           FontFamily="Consolas" FontSize="11" VerticalAlignment="Center"/>
-                <ProgressBar Grid.Row="1" Grid.Column="1" x:Name="SpeakerLevelBar"
-                             Height="14" Margin="4,2" Minimum="0" Maximum="100" Value="0"
-                             Foreground="#569CD6" Background="#1E1E1E"/>
-                <TextBlock Grid.Row="1" Grid.Column="2" x:Name="SpeakerLevelText"
-                           FontFamily="Consolas" FontSize="10" VerticalAlignment="Center"
-                           HorizontalAlignment="Right" Text="0%"/>
+                <TextBlock Grid.Row="0" Text="SIP Traffic Log" FontSize="12" FontWeight="SemiBold"
+                           Foreground="#8888AA" Margin="12,10,12,6"/>
+                <RichTextBox Grid.Row="1" x:Name="SipLog"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             IsReadOnly="True"
+                             FontFamily="Consolas" FontSize="11"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             Padding="8,0,8,8"/>
             </Grid>
-        </GroupBox>
-
-        <!-- SIP traffic log (dark terminal style) -->
-        <GroupBox Grid.Row="2" Header="SIP Traffic Log" Padding="0">
-            <RichTextBox x:Name="SipLog"
-                         Background="#1E1E1E"
-                         BorderThickness="0"
-                         IsReadOnly="True"
-                         FontFamily="Consolas" FontSize="11"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         Padding="6"/>
-        </GroupBox>
+        </Border>
 
         <!-- Buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="Clear Log" Width="90" Height="28" Margin="0,0,8,0"
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Clear Log" Width="90" Height="28"
+                    Style="{StaticResource DebugBtn}"
+                    Background="#2A2A45"
+                    Margin="0,0,8,0"
                     Click="ClearLog_Click"/>
             <Button Content="Refresh" Width="90" Height="28"
-                    Background="#607D8B" Foreground="White"
-                    Click="Refresh_Click"/>
+                    Style="{StaticResource DebugBtn}"
+                    Click="Refresh_Click">
+                <Button.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#536DFE" Offset="0"/>
+                        <GradientStop Color="#7C4DFF" Offset="1"/>
+                    </LinearGradientBrush>
+                </Button.Background>
+            </Button>
         </StackPanel>
     </Grid>
 </Window>

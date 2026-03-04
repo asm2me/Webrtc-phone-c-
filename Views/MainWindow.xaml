@@ -1,150 +1,339 @@
 <Window x:Class="WebRtcPhoneDialer.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WebRTC Phone Dialer" Height="600" Width="800"
+        Title="WebRTC Phone Dialer" Height="680" Width="420"
         WindowStartupLocation="CenterScreen"
-        Background="#F5F5F5"
+        Background="#0D0D1A"
+        ResizeMode="CanMinimize"
         Closing="Window_Closing">
+
+    <Window.Resources>
+        <!-- Dialer pad button style -->
+        <Style x:Key="DialerBtn" TargetType="Button">
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="FontWeight" Value="Light"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Width" Value="72"/>
+            <Setter Property="Height" Value="72"/>
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Ellipse x:Name="bg" Fill="#1A1A2E"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Fill" Value="#2A2A45"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bg" Property="Fill" Value="#3A3A5C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Action button base (call, hangup) -->
+        <Style x:Key="ActionBtn" TargetType="Button">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Width" Value="72"/>
+            <Setter Property="Height" Value="72"/>
+            <Setter Property="Margin" Value="10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <!-- Call button (green circle) -->
+        <Style x:Key="CallBtn" TargetType="Button" BasedOn="{StaticResource ActionBtn}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Ellipse x:Name="bg">
+                                <Ellipse.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#00C853" Offset="0"/>
+                                        <GradientStop Color="#009624" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Fill">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#2EFF6E" Offset="0"/>
+                                            <GradientStop Color="#00C853" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bg" Property="Fill" Value="#1A1A2E"/>
+                                <Setter Property="Foreground" Value="#555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Hangup button (red circle) -->
+        <Style x:Key="HangupBtn" TargetType="Button" BasedOn="{StaticResource ActionBtn}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Ellipse x:Name="bg">
+                                <Ellipse.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#FF1744" Offset="0"/>
+                                        <GradientStop Color="#D50000" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Fill">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#FF5252" Offset="0"/>
+                                            <GradientStop Color="#FF1744" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bg" Property="Fill" Value="#1A1A2E"/>
+                                <Setter Property="Foreground" Value="#555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Toolbar icon button -->
+        <Style x:Key="ToolbarBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#8888AA"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Background" Value="#1A1A2E"/>
+                                <Setter Property="Foreground" Value="#CCCCEE"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Register button -->
+        <Style x:Key="RegisterBtn" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" CornerRadius="12" Padding="14,5">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#536DFE" Offset="0"/>
+                                    <GradientStop Color="#7C4DFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#7C4DFF" Offset="0"/>
+                                            <GradientStop Color="#B388FF" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bg" Property="Background" Value="#2A2A45"/>
+                                <Setter Property="Foreground" Value="#666"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
-        <DockPanel Grid.Row="0" Background="#EEEEEE" LastChildFill="False" Height="40">
-            <TextBlock DockPanel.Dock="Left"
-                       Text="WebRTC Phone Dialer"
-                       FontSize="16" FontWeight="Bold"
-                       Foreground="#333333"
-                       VerticalAlignment="Center"
-                       Margin="16,0,0,0"/>
+        <!-- ═══ Top Bar ═══ -->
+        <Border Grid.Row="0" Background="#0D0D1A" Padding="12,8">
+            <DockPanel>
+                <!-- Registration status (left) -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#555566" Margin="0,0,6,0"/>
+                    <TextBlock x:Name="StatusText"
+                               Text="Unregistered"
+                               FontSize="11" Foreground="#8888AA"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
 
-            <!-- Right-side items (added right-to-left in DockPanel) -->
-            <Button DockPanel.Dock="Right"
-                    Content="⚙ Settings"
-                    Width="90" Height="28"
-                    Margin="0,0,10,0"
-                    Background="#607D8B" Foreground="White"
-                    Click="Settings_Click"/>
-            <Button DockPanel.Dock="Right"
-                    Content="Debug"
-                    Width="70" Height="28"
-                    Margin="0,0,6,0"
-                    Background="#607D8B" Foreground="White"
-                    Click="Debug_Click"/>
-            <Button DockPanel.Dock="Right"
-                    x:Name="RegisterButton"
-                    Content="Register"
-                    Width="80" Height="28"
-                    Margin="0,0,6,0"
-                    Background="#2196F3" Foreground="White" FontWeight="Bold"
-                    Click="Register_Click"/>
+                <!-- Right-side buttons -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="RegisterButton"
+                            Content="Register"
+                            Style="{StaticResource RegisterBtn}"
+                            Click="Register_Click"/>
+                    <Button Content="Debug"
+                            Style="{StaticResource ToolbarBtn}"
+                            Margin="8,0,0,0"
+                            Click="Debug_Click"/>
+                    <Button Content="Settings"
+                            Style="{StaticResource ToolbarBtn}"
+                            Margin="4,0,0,0"
+                            Click="Settings_Click"/>
+                </StackPanel>
 
-            <!-- Registration status indicator -->
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                        VerticalAlignment="Center" Margin="0,0,10,0">
-                <Ellipse x:Name="StatusDot" Width="12" Height="12" Fill="#9E9E9E"/>
-                <TextBlock x:Name="StatusText"
-                           Text="Unregistered"
-                           FontSize="12" Foreground="#555555"
-                           VerticalAlignment="Center" Margin="5,0,0,0"/>
+                <!-- Spacer -->
+                <Border/>
+            </DockPanel>
+        </Border>
+
+        <!-- ═══ Main Content ═══ -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Call Status Area -->
+            <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,18,0,6">
+                <TextBlock x:Name="CallStatusText"
+                           Text="Ready"
+                           FontSize="16" FontWeight="Light"
+                           Foreground="#CCCCEE"
+                           HorizontalAlignment="Center"/>
+                <TextBlock x:Name="CallDurationText"
+                           Text="00:00:00"
+                           FontSize="28" FontWeight="Thin"
+                           Foreground="#6C6C8A"
+                           HorizontalAlignment="Center"
+                           Margin="0,2,0,0"/>
             </StackPanel>
-        </DockPanel>
 
-        <!-- Main content -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Orientation="Vertical" Margin="20">
-
-                <!-- Call Status -->
-                <Border BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="5" Padding="15" Margin="0,0,0,20">
-                    <StackPanel>
-                        <TextBlock Text="Call Status" FontSize="14" FontWeight="Bold" Margin="0,0,0,10"/>
-                        <TextBlock x:Name="CallStatusText"
-                                   Text="Ready"
-                                   FontSize="14"
-                                   Foreground="#666666"/>
-                        <TextBlock x:Name="CallDurationText"
-                                   Text="Duration: 00:00:00"
-                                   FontSize="12"
-                                   Foreground="#999999"
-                                   Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Phone Number Input -->
-                <StackPanel Margin="0,0,0,15">
-                    <Label Content="Phone Number or SIP URI:" FontWeight="Bold" Margin="0,0,0,5"/>
+            <!-- Phone Number Input -->
+            <Border Grid.Row="1" Margin="40,8,40,10" CornerRadius="8" Background="#12122A">
+                <Grid>
                     <TextBox x:Name="PhoneNumberInput"
-                             Height="40"
-                             Padding="10"
-                             FontSize="16"
-                             Foreground="#333333"/>
-                </StackPanel>
-
-                <!-- Dialer Pad -->
-                <Grid Margin="0,0,0,15">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="50"/>
-                        <RowDefinition Height="50"/>
-                        <RowDefinition Height="50"/>
-                        <RowDefinition Height="50"/>
-                    </Grid.RowDefinitions>
-
-                    <Button Content="1" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="0" Grid.Row="0"/>
-                    <Button Content="2" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="1" Grid.Row="0"/>
-                    <Button Content="3" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="2" Grid.Row="0"/>
-
-                    <Button Content="4" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="0" Grid.Row="1"/>
-                    <Button Content="5" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="1" Grid.Row="1"/>
-                    <Button Content="6" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="2" Grid.Row="1"/>
-
-                    <Button Content="7" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="0" Grid.Row="2"/>
-                    <Button Content="8" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="1" Grid.Row="2"/>
-                    <Button Content="9" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="2" Grid.Row="2"/>
-
-                    <Button Content="*" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="0" Grid.Row="3"/>
-                    <Button Content="0" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="1" Grid.Row="3"/>
-                    <Button Content="#" Click="DialerButton_Click" Margin="5" Background="#E8E8E8" Grid.Column="2" Grid.Row="3"/>
+                             FontSize="22" FontWeight="Light"
+                             Foreground="#E0E0F0"
+                             CaretBrush="#7C4DFF"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="14,10"
+                             VerticalContentAlignment="Center"
+                             TextAlignment="Center"/>
+                    <!-- Placeholder text -->
+                    <TextBlock x:Name="InputPlaceholder"
+                               Text="Enter number or SIP URI"
+                               FontSize="14" FontWeight="Light"
+                               Foreground="#3A3A55"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               IsHitTestVisible="False"/>
                 </Grid>
+            </Border>
 
-                <!-- Control Buttons -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <Button x:Name="CallButton"
-                            Content="Call"
-                            Width="120"
-                            Height="50"
-                            Background="#4CAF50"
-                            Foreground="White"
-                            FontSize="16"
-                            FontWeight="Bold"
-                            Click="CallButton_Click"/>
-                    <Button x:Name="HangupButton"
-                            Content="Hang Up"
-                            Width="120"
-                            Height="50"
-                            Background="#F44336"
-                            Foreground="White"
-                            FontSize="16"
-                            FontWeight="Bold"
-                            Click="HangupButton_Click"
-                            IsEnabled="False"/>
-                    <Button Content="Clear"
-                            Width="120"
-                            Height="50"
-                            Background="#2196F3"
-                            Foreground="White"
-                            FontSize="16"
-                            FontWeight="Bold"
-                            Click="Clear_Click"/>
-                </StackPanel>
+            <!-- Dialer Pad -->
+            <Grid Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
+                <Button Content="1" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="0" Grid.Row="0"/>
+                <Button Content="2" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="1" Grid.Row="0"/>
+                <Button Content="3" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="2" Grid.Row="0"/>
+
+                <Button Content="4" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="0" Grid.Row="1"/>
+                <Button Content="5" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="1" Grid.Row="1"/>
+                <Button Content="6" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="2" Grid.Row="1"/>
+
+                <Button Content="7" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="0" Grid.Row="2"/>
+                <Button Content="8" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="1" Grid.Row="2"/>
+                <Button Content="9" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="2" Grid.Row="2"/>
+
+                <Button Content="*" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="0" Grid.Row="3"/>
+                <Button Content="0" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="1" Grid.Row="3"/>
+                <Button Content="#" Style="{StaticResource DialerBtn}" Click="DialerButton_Click" Grid.Column="2" Grid.Row="3"/>
+            </Grid>
+
+            <!-- Action Buttons Row -->
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,24">
+                <Button x:Name="CallButton"
+                        Style="{StaticResource CallBtn}"
+                        Click="CallButton_Click"
+                        ToolTip="Call">
+                    <StackPanel>
+                        <TextBlock Text="&#x260E;" FontSize="26" HorizontalAlignment="Center" FontFamily="Segoe UI Symbol"/>
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="HangupButton"
+                        Style="{StaticResource HangupBtn}"
+                        Click="HangupButton_Click"
+                        IsEnabled="False"
+                        ToolTip="Hang Up">
+                    <StackPanel>
+                        <TextBlock Text="&#x2716;" FontSize="22" HorizontalAlignment="Center" FontFamily="Segoe UI Symbol"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Clear / backspace button -->
+                <Button Style="{StaticResource DialerBtn}"
+                        Click="Clear_Click"
+                        Width="56" Height="56"
+                        ToolTip="Clear">
+                    <TextBlock Text="&#x232B;" FontSize="20" FontFamily="Segoe UI Symbol"/>
+                </Button>
             </StackPanel>
-        </ScrollViewer>
+        </Grid>
     </Grid>
 </Window>
