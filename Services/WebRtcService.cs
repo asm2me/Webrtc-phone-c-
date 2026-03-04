@@ -293,9 +293,19 @@ namespace WebRtcPhoneDialer.Services
             SetCallState(CallState.Ringing);
         }
 
-        private void OnCallAnswered(ISIPClientUserAgent uac, SIPResponse resp)
+        private async void OnCallAnswered(ISIPClientUserAgent uac, SIPResponse resp)
         {
-            Logger.Info("Call answered — starting audio");
+            Logger.Info("Call answered — starting RTP session and audio");
+            try
+            {
+                if (_mediaSession != null)
+                    await _mediaSession.Start();
+            }
+            catch (Exception ex)
+            {
+                LogRtp($"RTP session start error: {ex.Message}");
+                Logger.Warn(ex, "Failed to start RTP session");
+            }
             StartAudio();
             SetCallState(CallState.Connected);
             LogRtp("Call connected — audio streams active (mic → RTP, RTP → speaker)");
