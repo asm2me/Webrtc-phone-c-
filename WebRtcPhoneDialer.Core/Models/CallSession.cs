@@ -1,6 +1,7 @@
 using System;
+using WebRtcPhoneDialer.Core.Enums;
 
-namespace WebRtcPhoneDialer.Models
+namespace WebRtcPhoneDialer.Core.Models
 {
     public class CallSession
     {
@@ -47,16 +48,5 @@ namespace WebRtcPhoneDialer.Models
                 };
             }
         }
-    }
-
-    public enum CallState
-    {
-        Idle,
-        Initiating,
-        Ringing,
-        Connected,
-        OnHold,
-        Ended,
-        Failed
     }
 }

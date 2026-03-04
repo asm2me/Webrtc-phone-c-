@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Newtonsoft.Json;
 
-namespace WebRtcPhoneDialer.Models
+namespace WebRtcPhoneDialer.Core.Models
 {
     public class AppSettings
     {

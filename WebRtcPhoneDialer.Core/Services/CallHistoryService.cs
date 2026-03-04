@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using WebRtcPhoneDialer.Models;
+using WebRtcPhoneDialer.Core.Models;
 
-namespace WebRtcPhoneDialer.Services
+namespace WebRtcPhoneDialer.Core.Services
 {
     public class CallHistoryService
     {

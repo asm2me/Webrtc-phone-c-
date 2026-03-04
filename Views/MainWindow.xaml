@@ -317,6 +317,15 @@
                     </StackPanel>
                 </Button>
 
+                <Button x:Name="HoldButton"
+                        Style="{StaticResource DialerBtn}"
+                        Click="HoldButton_Click"
+                        IsEnabled="False"
+                        Width="56" Height="56"
+                        ToolTip="Hold / Resume">
+                    <TextBlock x:Name="HoldButtonText" Text="&#x23F8;" FontSize="18" FontFamily="Segoe UI Symbol"/>
+                </Button>
+
                 <Button x:Name="HangupButton"
                         Style="{StaticResource HangupBtn}"
                         Click="HangupButton_Click"

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace WebRtcPhoneDialer.Models
+namespace WebRtcPhoneDialer.Core.Models
 {
     public class IceServer
     {

@@ -3,10 +3,10 @@ using System.IO;
 using System.Linq;
 using System.Media;
 using System.Windows;
-using WebRtcPhoneDialer.Models;
-using WebRtcPhoneDialer.Services;
-using WebRtcPhoneDialer.Utilities;
+using WebRtcPhoneDialer.Core.Models;
+using WebRtcPhoneDialer.Core.Services;
 using WebRtcPhoneDialer.ViewModels;
+using WebRtcPhoneDialer.Windows;
 
 namespace WebRtcPhoneDialer.Views
 {
@@ -28,8 +28,9 @@ namespace WebRtcPhoneDialer.Views
             AuthTokenBox.Password = settings.AuthToken;
 
             // Populate audio device lists from Windows drivers
-            var inputDevices = AudioDeviceHelper.GetInputDevices();
-            var outputDevices = AudioDeviceHelper.GetOutputDevices();
+            var audioDevices = new WindowsAudioDeviceProvider();
+            var inputDevices = audioDevices.GetInputDevices();
+            var outputDevices = audioDevices.GetOutputDevices();
 
             InputDeviceCombo.ItemsSource = inputDevices;
             OutputDeviceCombo.ItemsSource = outputDevices;

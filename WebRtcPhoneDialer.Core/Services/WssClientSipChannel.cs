@@ -10,36 +10,23 @@ using System.Threading;
 using System.Threading.Tasks;
 using SIPSorcery.SIP;
 
-namespace WebRtcPhoneDialer.Services
+namespace WebRtcPhoneDialer.Core.Services
 {
     /// <summary>
     /// A client-side WebSocket SIP channel that pre-connects to a full WSS URI
     /// (including path, e.g. /ws) and bypasses TLS certificate validation for
     /// self-signed certificates on FreePBX/Asterisk servers.
-    ///
-    /// Replaces SIPSorcery's built-in SIPClientWebSocketChannel which hardcodes
-    /// the WebSocket URI as wss://ip:port (no path) and does not expose a
-    /// certificate validation callback.
     /// </summary>
     internal sealed class WssClientSipChannel : SIPChannel
     {
         private readonly Uri         _serverUri;
         private readonly SIPEndPoint _remoteEp;
-        private readonly SIPEndPoint _localEp;   // stored because ListeningSIPEndPoint is base-computed
+        private readonly SIPEndPoint _localEp;
         private ClientWebSocket?     _ws;
         private CancellationTokenSource? _cts;
 
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        /// <param name="serverUri">
-        ///   Full WebSocket URI including path, e.g. wss://pbx.example.com:8089/ws
-        /// </param>
-        /// <param name="localSipEp">
-        ///   Local SIPEndPoint used for Via / Contact headers (wss, local IP, any port).
-        /// </param>
-        /// <param name="remoteSipEp">
-        ///   SIPEndPoint of the server (used as the remote address for received messages).
-        /// </param>
         public WssClientSipChannel(Uri serverUri, SIPEndPoint localSipEp, SIPEndPoint remoteSipEp)
             : base(Encoding.UTF8, Encoding.UTF8)
         {
@@ -47,43 +34,27 @@ namespace WebRtcPhoneDialer.Services
             _remoteEp  = remoteSipEp;
             _localEp   = localSipEp;
 
-            // Set the base-class protected properties that back ListeningSIPEndPoint.
-            // ListeningSIPEndPoint is computed as:
-            //   new SIPEndPoint(SIPProtocol, ListeningIPAddress, Port, ID, null)
-            // If these are not set, SIPTransport cannot key or route through this channel,
-            // so it will try to open its own TLS/WSS connection (causing the SSL error).
-            SIPProtocol        = localSipEp.Protocol;   // SIPProtocolsEnum.wss
+            SIPProtocol        = localSipEp.Protocol;
             ListeningIPAddress = localSipEp.Address;
-            Port               = localSipEp.Port;       // 0 = client-only, no fixed port
-            IsReliable         = true;                  // WSS is TCP-based (reliable)
-            IsSecure           = true;                  // WSS is TLS (secure)
+            Port               = localSipEp.Port;
+            IsReliable         = true;
+            IsSecure           = true;
         }
 
-        // ── Connect ───────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Connects the WebSocket to the server URI. Must be called before adding
-        /// this channel to a SIPTransport.
-        /// </summary>
         public async Task ConnectAsync(CancellationToken ct = default)
         {
             _ws  = new ClientWebSocket();
             _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
             _ws.Options.AddSubProtocol("sip");
-
-            // Bypass TLS validation — necessary for self-signed certs on FreePBX
             _ws.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
 
             Logger.Info($"WssClientSipChannel connecting to {_serverUri}");
             await _ws.ConnectAsync(_serverUri, _cts.Token);
             Logger.Info($"WssClientSipChannel connected (State={_ws.State})");
 
-            // Start receive loop in background
             _ = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
         }
-
-        // ── Receive loop ──────────────────────────────────────────────────────────
 
         private async Task ReceiveLoopAsync(CancellationToken ct)
         {
@@ -121,33 +92,21 @@ namespace WebRtcPhoneDialer.Services
                     }
                 }
             }
-            catch (OperationCanceledException) { /* normal shutdown */ }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 Logger.Warn(ex, "WssClientSipChannel receive loop error");
             }
         }
 
-        // ── SIPChannel abstract implementations ──────────────────────────────────
-
         public override Task<SocketError> SendAsync(
-            SIPEndPoint dstEndPoint,
-            byte[] buffer,
-            bool canInitiateConnection,
-            string connectionIDHint)
-        {
-            return SendOverWsAsync(buffer);
-        }
+            SIPEndPoint dstEndPoint, byte[] buffer, bool canInitiateConnection, string connectionIDHint)
+            => SendOverWsAsync(buffer);
 
         public override Task<SocketError> SendSecureAsync(
-            SIPEndPoint dstEndPoint,
-            byte[] buffer,
-            string serverCertificateName,
-            bool canInitiateConnection,
-            string connectionIDHint)
-        {
-            return SendOverWsAsync(buffer);
-        }
+            SIPEndPoint dstEndPoint, byte[] buffer, string serverCertificateName,
+            bool canInitiateConnection, string connectionIDHint)
+            => SendOverWsAsync(buffer);
 
         private async Task<SocketError> SendOverWsAsync(byte[] buffer)
         {
@@ -197,7 +156,7 @@ namespace WebRtcPhoneDialer.Services
                     _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing",
                                    CancellationToken.None).GetAwaiter().GetResult();
             }
-            catch { /* ignore errors during close */ }
+            catch { }
             _ws?.Dispose();
             _ws = null;
         }

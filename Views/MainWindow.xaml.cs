@@ -1,12 +1,15 @@
 using System;
 using System.ComponentModel;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using WebRtcPhoneDialer.Models;
-using WebRtcPhoneDialer.Services;
+using WebRtcPhoneDialer.Core.Enums;
+using WebRtcPhoneDialer.Core.Models;
+using WebRtcPhoneDialer.Core.Services;
 using WebRtcPhoneDialer.ViewModels;
+using WebRtcPhoneDialer.Windows;
 
 namespace WebRtcPhoneDialer.Views
 {
@@ -21,7 +24,7 @@ namespace WebRtcPhoneDialer.Views
         public MainWindow()
         {
             InitializeComponent();
-            _webRtcService = new WebRtcService();
+            _webRtcService = new WebRtcService(new WindowsAudioEndPointFactory());
             _viewModel = new MainWindowViewModel(_webRtcService);
             DataContext = _viewModel;
 
@@ -36,6 +39,7 @@ namespace WebRtcPhoneDialer.Views
             // Subscribe to state change events
             _webRtcService.RegistrationStateChanged += OnRegistrationStateChanged;
             _webRtcService.CallStateChanged += OnCallStateChanged;
+            _webRtcService.IncomingCall += OnIncomingCall;
 
             // Placeholder visibility for phone input
             PhoneNumberInput.TextChanged += (_, _) =>
@@ -107,6 +111,7 @@ namespace WebRtcPhoneDialer.Views
         private async void HangupButton_Click(object sender, RoutedEventArgs e)
         {
             HangupButton.IsEnabled = false;
+            HoldButton.IsEnabled = false;
             try
             {
                 await _webRtcService.EndCallAsync();
@@ -114,6 +119,69 @@ namespace WebRtcPhoneDialer.Views
             catch (Exception ex)
             {
                 MessageBox.Show($"Error ending call: {ex.Message}", "Call Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void HoldButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var call = _webRtcService.GetCurrentCall();
+                if (call?.State == CallState.OnHold)
+                {
+                    _webRtcService.UnholdCall();
+                }
+                else if (call?.State == CallState.Connected)
+                {
+                    _webRtcService.HoldCall();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}", "Hold Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OnIncomingCall(object? sender, CallSession call)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _currentCall = call;
+                var result = MessageBox.Show(
+                    $"Incoming call from {call.RemoteParty}\n\nAnswer?",
+                    "Incoming Call",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    _ = AnswerIncomingCallAsync();
+                }
+                else
+                {
+                    _webRtcService.RejectCall();
+                    _currentCall = null;
+                }
+            });
+        }
+
+        private async Task AnswerIncomingCallAsync()
+        {
+            try
+            {
+                CallButton.IsEnabled = false;
+                HangupButton.IsEnabled = true;
+                HoldButton.IsEnabled = false;
+                CallStatusText.Text = "Answering...";
+                CallStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xAB, 0x00));
+                await _webRtcService.AnswerCallAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error answering call: {ex.Message}", "Call Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                CallButton.IsEnabled = true;
+                HangupButton.IsEnabled = false;
+                _currentCall = null;
             }
         }
 
@@ -255,7 +323,15 @@ namespace WebRtcPhoneDialer.Views
                     CallStatusText.Text = "Connected";
                     CallStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
                     CallDurationText.Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xEE));
+                    HoldButton.IsEnabled = true;
+                    HoldButtonText.Text = "\u23F8"; // pause icon
                     _callTimer.Start();
+                    break;
+                case CallState.OnHold:
+                    CallStatusText.Text = "On Hold";
+                    CallStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xAB, 0x00));
+                    HoldButton.IsEnabled = true;
+                    HoldButtonText.Text = "\u25B6"; // play icon (resume)
                     break;
                 case CallState.Ended:
                     _callTimer.Stop();
@@ -271,6 +347,7 @@ namespace WebRtcPhoneDialer.Views
                     CallDurationText.Foreground = new SolidColorBrush(Color.FromRgb(0x6C, 0x6C, 0x8A));
                     CallButton.IsEnabled = true;
                     HangupButton.IsEnabled = false;
+                    HoldButton.IsEnabled = false;
                     break;
                 case CallState.Failed:
                     _callTimer.Stop();
@@ -286,6 +363,7 @@ namespace WebRtcPhoneDialer.Views
                     CallDurationText.Foreground = new SolidColorBrush(Color.FromRgb(0x6C, 0x6C, 0x8A));
                     CallButton.IsEnabled = true;
                     HangupButton.IsEnabled = false;
+                    HoldButton.IsEnabled = false;
                     break;
             }
         }

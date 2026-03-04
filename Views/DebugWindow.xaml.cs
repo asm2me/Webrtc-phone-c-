@@ -5,8 +5,9 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
-using WebRtcPhoneDialer.Models;
-using WebRtcPhoneDialer.Services;
+using WebRtcPhoneDialer.Core.Enums;
+using WebRtcPhoneDialer.Core.Events;
+using WebRtcPhoneDialer.Core.Services;
 
 namespace WebRtcPhoneDialer.Views
 {

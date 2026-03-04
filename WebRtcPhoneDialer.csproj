@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows10.0.17763</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.17763</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>WebRtcPhoneDialer</RootNamespace>
     <AssemblyName>WebRtcPhoneDialer</AssemblyName>
@@ -11,18 +11,24 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- corrected package ID; original 'google-api-dotnet-client' does not exist on nuget.org -->
+    <Compile Remove="WebRtcPhoneDialer.Core\**" />
+    <Compile Remove="WebRtcPhoneDialer.Windows\**" />
+    <None Remove="WebRtcPhoneDialer.Core\**" />
+    <None Remove="WebRtcPhoneDialer.Windows\**" />
+    <Content Remove="WebRtcPhoneDialer.Core\**" />
+    <Content Remove="WebRtcPhoneDialer.Windows\**" />
+    <EmbeddedResource Remove="WebRtcPhoneDialer.Core\**" />
+    <EmbeddedResource Remove="WebRtcPhoneDialer.Windows\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="WebRtcPhoneDialer.Core\WebRtcPhoneDialer.Core.csproj" />
+    <ProjectReference Include="WebRtcPhoneDialer.Windows\WebRtcPhoneDialer.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Google.Apis" Version="1.68.0" />
     <PackageReference Include="RestSharp" Version="107.3.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="NLog" Version="5.2.7" />
-    <!-- Pin logging to 8.x to match SIPSorcery 8.0.0 compiled dependencies -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
-    <!-- WebRTC / SIP stack: handles ICE, DTLS-SRTP, SIP signaling over WebSocket -->
-    <PackageReference Include="SIPSorcery" Version="8.0.0" />
-    <!-- Windows audio endpoints (microphone + speaker) via NAudio -->
-    <PackageReference Include="SIPSorceryMedia.Windows" Version="6.0.5" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using WebRtcPhoneDialer.Models;
+using WebRtcPhoneDialer.Core.Models;
 
 namespace WebRtcPhoneDialer.ViewModels
 {

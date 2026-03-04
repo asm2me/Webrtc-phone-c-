@@ -1,16 +1,11 @@
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using WebRtcPhoneDialer.Core.Interfaces;
+using WebRtcPhoneDialer.Core.Models;
 
-namespace WebRtcPhoneDialer.Utilities
+namespace WebRtcPhoneDialer.Windows
 {
-    public class AudioDevice
-    {
-        public int Index { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public override string ToString() => Name;
-    }
-
-    public static class AudioDeviceHelper
+    public class WindowsAudioDeviceProvider : IAudioDeviceProvider
     {
         [DllImport("winmm.dll")]
         private static extern int waveInGetNumDevs();
@@ -48,10 +43,10 @@ namespace WebRtcPhoneDialer.Utilities
             public uint dwFormats;
             public ushort wChannels;
             public ushort wReserved1;
-            public uint dwSupport;   // was missing — caused cbwoc mismatch → no devices returned
+            public uint dwSupport;
         }
 
-        public static List<AudioDevice> GetInputDevices()
+        public List<AudioDevice> GetInputDevices()
         {
             var devices = new List<AudioDevice>();
             int count = waveInGetNumDevs();
@@ -64,7 +59,7 @@ namespace WebRtcPhoneDialer.Utilities
             return devices;
         }
 
-        public static List<AudioDevice> GetOutputDevices()
+        public List<AudioDevice> GetOutputDevices()
         {
             var devices = new List<AudioDevice>();
             int count = waveOutGetNumDevs();

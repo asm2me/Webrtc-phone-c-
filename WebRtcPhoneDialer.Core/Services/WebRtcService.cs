@@ -10,36 +10,21 @@ using SIPSorcery.Net;
 using SIPSorcery.SIP;
 using SIPSorcery.SIP.App;
 using SIPSorceryMedia.Abstractions;
-using SIPSorceryMedia.Windows;
-using WebRtcPhoneDialer.Models;
+using WebRtcPhoneDialer.Core.Enums;
+using WebRtcPhoneDialer.Core.Events;
+using WebRtcPhoneDialer.Core.Interfaces;
+using WebRtcPhoneDialer.Core.Models;
 
-namespace WebRtcPhoneDialer.Services
+namespace WebRtcPhoneDialer.Core.Services
 {
-    public enum RegistrationState { Unregistered, Registering, Registered, Failed }
-
-    public class SipLogEventArgs : EventArgs
+    public class WebRtcService : IPhoneService
     {
-        public string Direction { get; }   // ">>" = sent, "<<" = received
-        public string Message  { get; }
-        public SipLogEventArgs(string direction, string message)
-        {
-            Direction = direction;
-            Message   = message;
-        }
-    }
-
-    public class RtpLogEventArgs : EventArgs
-    {
-        public string Message { get; }
-        public RtpLogEventArgs(string message) { Message = message; }
-    }
-
-    public class WebRtcService : IDisposable
-    {
+        private readonly IAudioEndPointFactory _audioFactory;
         private CallSession?   _currentCall;
         private WebRtcConfiguration _config;
         private DateTime       _callStartTime;
         private bool           _disposed = false;
+        private volatile bool  _micMuted = false;
 
         // SIP domain override (Settings > SIP Domain field)
         private string? _sipDomain;
@@ -69,7 +54,10 @@ namespace WebRtcPhoneDialer.Services
         private SIPEndPoint?                 _proxyEp;
         private IPAddress?                   _localIp;
         private RTPSession?                  _mediaSession;
-        private WindowsAudioEndPoint?        _audioEndPoint;
+
+        // Platform-abstracted audio endpoint
+        private IAudioSource?                _audioSource;
+        private IAudioSink?                  _audioSink;
 
         // Circular buffers for Debug window replay
         private readonly Queue<SipLogEventArgs> _sipLogBuffer = new();
@@ -81,6 +69,7 @@ namespace WebRtcPhoneDialer.Services
         public string            RegistrationMessage { get; private set; } = "Not registered";
         public string?           LastCallFailureReason { get; private set; }
 
+        // Existing events
         public event EventHandler<RegistrationState>? RegistrationStateChanged;
         public event EventHandler<CallState>?         CallStateChanged;
         public event EventHandler<SipLogEventArgs>?   SipMessageLogged;
@@ -88,10 +77,17 @@ namespace WebRtcPhoneDialer.Services
         public event EventHandler<float>?              MicLevelChanged;
         public event EventHandler<float>?              SpeakerLevelChanged;
 
+        // Rich event with full call context
+        public event EventHandler<CallStateChangedEventArgs>? CallStateDetailChanged;
+
+        // Incoming call event
+        public event EventHandler<CallSession>? IncomingCall;
+
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        public WebRtcService()
+        public WebRtcService(IAudioEndPointFactory audioFactory)
         {
+            _audioFactory = audioFactory ?? throw new ArgumentNullException(nameof(audioFactory));
             _config = new WebRtcConfiguration();
             Logger.Info("WebRTC Service initialized (SIPSorcery)");
         }
@@ -159,14 +155,12 @@ namespace WebRtcPhoneDialer.Services
                 var user   = _config.Username ?? "";
                 var pass   = _config.Password ?? "";
 
-                // DNS resolve so we can build a SIPEndPoint (requires IPAddress)
                 var addresses = await Dns.GetHostAddressesAsync(sigUri.Host);
                 var serverIp  = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)
                                 ?? addresses.First();
                 var proxyEp   = new SIPEndPoint(SIPProtocolsEnum.wss, serverIp, sigUri.Port);
                 _proxyEp = proxyEp;
 
-                // Determine local IP for Via/Contact headers + RTP session bind address
                 var localIp = GetLocalIpForRemote(serverIp);
                 _localIp = localIp;
                 var localSipEp = new SIPEndPoint(SIPProtocolsEnum.wss, localIp, 0);
@@ -174,8 +168,6 @@ namespace WebRtcPhoneDialer.Services
                 LogRtp($"Resolved {sigUri.Host} → {serverIp}  Local: {localIp}  Proxy: {proxyEp}");
                 LogRtp($"Connecting WebSocket to {sigUri}");
 
-                // Create our custom channel that uses the FULL URI (including /ws path)
-                // and bypasses TLS certificate validation for self-signed certs
                 _wssChannel = new WssClientSipChannel(sigUri, localSipEp, proxyEp);
                 await _wssChannel.ConnectAsync();
 
@@ -184,13 +176,14 @@ namespace WebRtcPhoneDialer.Services
                 _sipTransport = new SIPTransport();
                 _sipTransport.AddSIPChannel(_wssChannel);
 
-                // Wire SIP message tracing → debug window
                 _sipTransport.SIPRequestInTraceEvent  += (_, _, req)  => LogSipReceived(req.ToString());
                 _sipTransport.SIPResponseInTraceEvent += (_, _, resp) => LogSipReceived(resp.ToString());
                 _sipTransport.SIPRequestOutTraceEvent  += (_, _, req)  => LogSipSent(req.ToString());
                 _sipTransport.SIPResponseOutTraceEvent += (_, _, resp) => LogSipSent(resp.ToString());
 
-                // Registration agent (handles REGISTER + auth challenge + keep-alive)
+                // Handle incoming calls (INVITE requests)
+                _sipTransport.SIPTransportRequestReceived += OnSipRequestReceived;
+
                 _regAgent = new SIPRegistrationUserAgent(_sipTransport, user, pass, $"sip:{user}@{host}", 3600);
                 _regAgent.OutboundProxy = proxyEp;
                 _regAgent.RegistrationSuccessful += OnRegistrationSuccessful;
@@ -212,9 +205,6 @@ namespace WebRtcPhoneDialer.Services
 
         private void OnRegistrationSuccessful(SIPURI uri, SIPResponse resp)
         {
-            // Extract our public IP from the Via header's "received" parameter.
-            // The SIP server tells us what IP it sees us from — this is more reliable
-            // than STUN because it uses the same signaling path.
             try
             {
                 var topVia = resp.Header.Vias.TopViaHeader;
@@ -226,7 +216,6 @@ namespace WebRtcPhoneDialer.Services
                 }
                 else
                 {
-                    // Fallback: use STUN to discover public IP
                     _publicIp = DiscoverPublicIpViaStun();
                 }
             }
@@ -276,8 +265,6 @@ namespace WebRtcPhoneDialer.Services
             };
             SetCallState(CallState.Initiating);
 
-            // Recreate SIPUserAgent for each call — reusing the same instance after a
-            // failed call can leave SIPSorcery's internal transaction state corrupt.
             _userAgent = new SIPUserAgent(_sipTransport, _proxyEp, false, null);
             _userAgent.OnCallHungup      += OnRemoteHangup;
             _userAgent.ClientCallAnswered += OnCallAnswered;
@@ -287,16 +274,12 @@ namespace WebRtcPhoneDialer.Services
 
             _mediaSession = BuildMediaSession();
 
-            // Perform STUN binding from the actual RTP socket to:
-            // 1) Create a NAT pinhole so return traffic can reach us
-            // 2) Discover the exact public IP:port mapping for the SDP
             await StunBindRtpSocket((NatAwareRtpSession)_mediaSession);
 
             var callUri = SIPURI.ParseSIPURIRelaxed($"sip:{remoteParty}@{host}");
             Logger.Info($"Calling {callUri}");
             LogRtp("VoIP media session created (RTP/AVP)");
 
-            // SIPSorcery handles: SDP offer, 407 re-auth, ACK
             bool result;
             try
             {
@@ -334,6 +317,159 @@ namespace WebRtcPhoneDialer.Services
             return Task.CompletedTask;
         }
 
+        public void HoldCall()
+        {
+            if (_currentCall == null || _currentCall.State != CallState.Connected)
+                throw new InvalidOperationException("No active call to hold.");
+
+            _micMuted = true;
+            LogRtp("Call placed on hold — mic muted");
+            SetCallState(CallState.OnHold);
+            Logger.Info("Call placed on hold");
+        }
+
+        public void UnholdCall()
+        {
+            if (_currentCall == null || _currentCall.State != CallState.OnHold)
+                throw new InvalidOperationException("No call on hold to resume.");
+
+            _micMuted = false;
+            LogRtp("Call resumed from hold — mic unmuted");
+            SetCallState(CallState.Connected);
+            Logger.Info("Call resumed from hold");
+        }
+
+        public void SendDtmf(byte tone)
+        {
+            if (_currentCall == null || _currentCall.State != CallState.Connected)
+                throw new InvalidOperationException("No active call for DTMF.");
+
+            if (_mediaSession != null)
+            {
+                var ev = new RTPEvent(tone, false, RTPEvent.DEFAULT_VOLUME, 160, 101);
+                _mediaSession.SendDtmfEvent(ev, default);
+                LogRtp($"DTMF tone sent: {tone}");
+            }
+        }
+
+        public void MuteMicrophone()
+        {
+            _micMuted = true;
+            LogRtp("Microphone muted");
+        }
+
+        public void UnmuteMicrophone()
+        {
+            _micMuted = false;
+            LogRtp("Microphone unmuted");
+        }
+
+        // ── Incoming call handling ──────────────────────────────────────────────
+
+        private SIPRequest? _pendingInvite;
+
+        private async Task OnSipRequestReceived(SIPEndPoint localEp, SIPEndPoint remoteEp, SIPRequest req)
+        {
+            if (req.Method != SIPMethodsEnum.INVITE)
+                return;
+
+            Logger.Info($"Incoming INVITE from {req.Header.From.FromURI}");
+            LogRtp($"Incoming call from {req.Header.From.FromURI}");
+
+            if (HasActiveCall)
+            {
+                // Busy — reject with 486
+                var busyResp = SIPResponse.GetResponse(req, SIPResponseStatusCodesEnum.BusyHere, null);
+                await _sipTransport!.SendResponseAsync(busyResp);
+                LogRtp("Rejected incoming call — busy");
+                return;
+            }
+
+            _pendingInvite = req;
+
+            // Send 180 Ringing
+            var ringingResp = SIPResponse.GetResponse(req, SIPResponseStatusCodesEnum.Ringing, null);
+            await _sipTransport!.SendResponseAsync(ringingResp);
+
+            _currentCall = new CallSession
+            {
+                RemoteParty = req.Header.From.FromURI.User ?? req.Header.From.FromURI.ToString(),
+                State = CallState.Ringing,
+                StartTime = DateTime.Now
+            };
+            SetCallState(CallState.Ringing);
+
+            IncomingCall?.Invoke(this, _currentCall);
+        }
+
+        public async Task AnswerCallAsync()
+        {
+            if (_pendingInvite == null || _currentCall == null || _currentCall.State != CallState.Ringing)
+                throw new InvalidOperationException("No incoming call to answer.");
+
+            try
+            {
+                _userAgent = new SIPUserAgent(_sipTransport!, _proxyEp, false, null);
+                _userAgent.OnCallHungup += OnRemoteHangup;
+
+                _mediaSession = BuildMediaSession();
+                await StunBindRtpSocket((NatAwareRtpSession)_mediaSession);
+
+                var uas = _userAgent.AcceptCall(_pendingInvite);
+                await _userAgent.Answer(uas, _mediaSession);
+
+                _rtpPacketsSent = 0;
+                _rtpPacketsReceived = 0;
+                _rtpBytesSent = 0;
+                _rtpBytesReceived = 0;
+                _firstRtpSent = null;
+                _firstRtpReceived = null;
+
+                await StartAudioAsync();
+                StartRtpStatsTimer();
+                SetCallState(CallState.Connected);
+
+                _pendingInvite = null;
+                LogRtp("Incoming call answered — audio active");
+                Logger.Info("Incoming call answered");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error answering incoming call");
+                LogRtp($"Answer failed: {ex.Message}");
+                CleanupMedia();
+                SetCallState(CallState.Failed);
+                _currentCall = null;
+                _pendingInvite = null;
+                throw;
+            }
+        }
+
+        public void RejectCall()
+        {
+            if (_pendingInvite == null) return;
+
+            try
+            {
+                var declineResp = SIPResponse.GetResponse(_pendingInvite, SIPResponseStatusCodesEnum.Decline, null);
+                _sipTransport?.SendResponseAsync(declineResp).Wait(2000);
+                LogRtp("Incoming call rejected");
+                Logger.Info("Incoming call rejected");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Error rejecting call");
+            }
+
+            if (_currentCall != null)
+            {
+                _currentCall.EndTime = DateTime.Now;
+                SetCallState(CallState.Ended);
+                _currentCall = null;
+            }
+            _pendingInvite = null;
+        }
+
         // ── SIPUserAgent call-state callbacks ─────────────────────────────────────
 
         private void OnCallRinging(ISIPClientUserAgent uac, SIPResponse resp)
@@ -346,7 +482,6 @@ namespace WebRtcPhoneDialer.Services
         {
             Logger.Info("Call answered — starting RTP session and audio");
 
-            // Reset RTP stats for this call
             _rtpPacketsSent = 0;
             _rtpPacketsReceived = 0;
             _rtpBytesSent = 0;
@@ -368,7 +503,6 @@ namespace WebRtcPhoneDialer.Services
                 Logger.Warn(ex, "Failed to start RTP session");
             }
 
-            // Log RTP endpoint details
             if (_mediaSession != null)
             {
                 var audioDest = _mediaSession.AudioDestinationEndPoint;
@@ -377,13 +511,10 @@ namespace WebRtcPhoneDialer.Services
                 LogRtp($"RTP remote endpoint: {audioDest}");
                 LogRtp($"RTP AcceptFromAny: {_mediaSession.AcceptRtpFromAny}");
 
-                // Send silence packets immediately to punch NAT pinhole.
-                // The server (with comedia/symmetric RTP) will then send back
-                // to the address it receives our packets from.
                 try
                 {
                     var silence = new byte[160];
-                    Array.Fill(silence, (byte)0xFF); // PCMU silence
+                    Array.Fill(silence, (byte)0xFF);
                     for (int i = 0; i < 5; i++)
                         _mediaSession.SendAudio(160, silence);
                     LogRtp($"Sent 5 NAT-pinhole silence packets to {audioDest}");
@@ -426,11 +557,6 @@ namespace WebRtcPhoneDialer.Services
 
         // ── NAT-aware RTP session ────────────────────────────────────────────────
 
-        /// <summary>
-        /// RTPSession subclass that overrides CreateOffer to announce the public IP
-        /// in the SDP c= and o= lines instead of the local/private bind address.
-        /// This fixes NAT traversal: the remote server can send RTP to our public IP.
-        /// </summary>
         private class NatAwareRtpSession : RTPSession
         {
             private IPAddress _announcedAddress;
@@ -451,14 +577,9 @@ namespace WebRtcPhoneDialer.Services
             public override SDP CreateOffer(IPAddress connectionAddress)
             {
                 var addr = _announcedAddress ?? connectionAddress;
-                // Pass our public IP so the SDP c= line is correct
                 var sdp = base.CreateOffer(addr);
-
-                // Fix the o= line address (base.CreateOffer uses IPAddress.Loopback → 127.0.0.1)
                 try { sdp.AddressOrHost = addr.ToString(); } catch { }
 
-                // If we discovered the exact NAT-mapped port via STUN, override
-                // the media port so the server sends RTP to the correct public port.
                 if (_announcedPort > 0)
                 {
                     try
@@ -473,9 +594,6 @@ namespace WebRtcPhoneDialer.Services
             }
         }
 
-        /// <summary>
-        /// Discover our public IP via STUN (fallback when Via received is not available).
-        /// </summary>
         private IPAddress? DiscoverPublicIpViaStun()
         {
             try
@@ -494,12 +612,6 @@ namespace WebRtcPhoneDialer.Services
             return null;
         }
 
-        /// <summary>
-        /// Send a STUN binding request from the actual RTP socket to:
-        /// 1) Create a NAT pinhole so inbound RTP can reach us
-        /// 2) Discover the exact public IP:port the NAT assigned to this socket
-        /// The discovered endpoint is then used in the SDP offer.
-        /// </summary>
         private async Task StunBindRtpSocket(NatAwareRtpSession session)
         {
             try
@@ -524,16 +636,12 @@ namespace WebRtcPhoneDialer.Services
 
                 var stunEp = new IPEndPoint(stunIp, 19302);
 
-                // Build a STUN Binding Request and send directly from the RTP socket.
-                // This creates a NAT pinhole AND discovers the exact mapped endpoint.
                 var stunReq = new STUNMessage(STUNMessageTypesEnum.BindingRequest);
                 var reqBytes = stunReq.ToByteBuffer(null, false);
 
-                // Use the RTP channel's Send method to ensure we go through the same socket
                 rtpChannel.Send(RTPChannelSocketsEnum.RTP, stunEp, reqBytes);
                 LogRtp($"STUN-bind: sent binding request to {stunEp} from port {rtpChannel.RTPPort}");
 
-                // Read response directly from the socket (receive loop not started yet)
                 var rtpSocket = rtpChannel.RtpSocket;
                 var prevTimeout = rtpSocket.ReceiveTimeout;
                 rtpSocket.ReceiveTimeout = 3000;
@@ -552,7 +660,6 @@ namespace WebRtcPhoneDialer.Services
                             var stunResp = STUNMessage.ParseSTUNMessage(recvBuf, bytesRead);
                             if (stunResp?.Header?.MessageType == STUNMessageTypesEnum.BindingSuccessResponse)
                             {
-                                // Find XOR-MAPPED-ADDRESS or MAPPED-ADDRESS in the response
                                 foreach (var attr in stunResp.Attributes)
                                 {
                                     if (attr is STUNXORAddressAttribute xor)
@@ -566,11 +673,11 @@ namespace WebRtcPhoneDialer.Services
                                         mapped = new IPEndPoint(addr.Address, addr.Port);
                                     }
                                 }
-                                break; // got a valid STUN response
+                                break;
                             }
                         }
                     }
-                    catch (SocketException) { break; } // timeout
+                    catch (SocketException) { break; }
                 }
 
                 rtpSocket.ReceiveTimeout = prevTimeout;
@@ -601,32 +708,30 @@ namespace WebRtcPhoneDialer.Services
 
         private RTPSession BuildMediaSession()
         {
-            // Use public IP for SDP announcement; fall back to local IP
             var announceIp = _publicIp ?? _localIp ?? IPAddress.Any;
             var bindIp = _localIp ?? IPAddress.Any;
 
             LogRtp($"Building media session — bind: {bindIp}, announce (SDP): {announceIp}");
 
             var session = new NatAwareRtpSession(announceIp, bindIp);
-
-            // Accept RTP from any source — critical for NAT traversal.
-            // Without this, RTP from the server's actual endpoint (which may differ
-            // from what's in the SDP) would be silently dropped.
             session.AcceptRtpFromAny = true;
 
-            // Windows audio: microphone → encode → RTP; RTP → decode → speaker
-            _audioEndPoint = new WindowsAudioEndPoint(new AudioEncoder(), -1, -1, false, false);
-            _audioEndPoint.RestrictFormats(f => f.Codec == AudioCodecsEnum.PCMU ||
-                                                f.Codec == AudioCodecsEnum.PCMA);
+            // Create platform-abstracted audio endpoints
+            _audioSource = _audioFactory.CreateAudioSource();
+            _audioSink   = _audioFactory.CreateAudioSink();
+
+            _audioSource.RestrictFormats(f => f.Codec == AudioCodecsEnum.PCMU ||
+                                              f.Codec == AudioCodecsEnum.PCMA);
 
             var audioTrack = new MediaStreamTrack(
-                _audioEndPoint.GetAudioSourceFormats(),
+                _audioSource.GetAudioSourceFormats(),
                 MediaStreamStatusEnum.SendRecv);
             session.addTrack(audioTrack);
 
             // Wrap SendAudio to count outgoing packets + mic level
-            _audioEndPoint.OnAudioSourceEncodedSample += (durationRtpUnits, sample) =>
+            _audioSource.OnAudioSourceEncodedSample += (durationRtpUnits, sample) =>
             {
+                if (_micMuted) return; // Skip sending when muted/on-hold
                 session.SendAudio(durationRtpUnits, sample);
                 var count = Interlocked.Increment(ref _rtpPacketsSent);
                 Interlocked.Add(ref _rtpBytesSent, sample.Length);
@@ -646,8 +751,8 @@ namespace WebRtcPhoneDialer.Services
             session.OnAudioFormatsNegotiated += formats =>
             {
                 var fmt = formats.First();
-                _audioEndPoint.SetAudioSourceFormat(fmt);
-                _audioEndPoint.SetAudioSinkFormat(fmt);
+                _audioSource?.SetAudioSourceFormat(fmt);
+                _audioSink?.SetAudioSinkFormat(fmt);
                 LogRtp($"Audio codec negotiated: {fmt.Codec} PT={fmt.FormatID}");
             };
 
@@ -657,7 +762,7 @@ namespace WebRtcPhoneDialer.Services
                 {
                     try
                     {
-                        _audioEndPoint?.GotAudioRtp(ep,
+                        _audioSink?.GotAudioRtp(ep,
                             pkt.Header.SyncSource,
                             pkt.Header.SequenceNumber,
                             pkt.Header.Timestamp,
@@ -668,7 +773,7 @@ namespace WebRtcPhoneDialer.Services
                     catch (Exception ex)
                     {
                         var cnt = Interlocked.Read(ref _rtpPacketsReceived);
-                        if (cnt < 3) // only log first few errors to avoid spam
+                        if (cnt < 3)
                             LogRtp($"GotAudioRtp error: {ex.Message}");
                     }
 
@@ -695,15 +800,14 @@ namespace WebRtcPhoneDialer.Services
         {
             try
             {
-                if (_audioEndPoint != null)
+                if (_audioSink != null)
                 {
-                    // CRITICAL: Start the audio SINK (speaker) first.
-                    // Without this, GotAudioRtp silently drops all received audio!
-                    await _audioEndPoint.StartAudioSink();
+                    await _audioSink.StartAudioSink();
                     LogRtp("Audio sink (speaker) started");
-
-                    // Then start the audio SOURCE (microphone)
-                    await _audioEndPoint.StartAudio();
+                }
+                if (_audioSource != null)
+                {
+                    await _audioSource.StartAudio();
                     LogRtp("Audio source (mic) started");
                 }
             }
@@ -731,7 +835,6 @@ namespace WebRtcPhoneDialer.Services
                     var bytesRecv = Interlocked.Read(ref _rtpBytesReceived);
                     LogRtp($"RTP stats — Sent: {sent} pkts ({bytesSent / 1024}KB) | Recv: {recv} pkts ({bytesRecv / 1024}KB)");
 
-                    // Warn if no packets received after first tick (5s)
                     if (_rtpStatsTickCount == 1 && recv == 0 && sent > 0)
                         LogRtp("WARNING: Sending RTP but receiving NONE — possible NAT/firewall issue");
                     if (_rtpStatsTickCount == 1 && sent == 0)
@@ -750,17 +853,23 @@ namespace WebRtcPhoneDialer.Services
         {
             StopRtpStatsTimer();
 
-            // Log final RTP stats
             var sent = Interlocked.Read(ref _rtpPacketsSent);
             var recv = Interlocked.Read(ref _rtpPacketsReceived);
             if (sent > 0 || recv > 0)
                 LogRtp($"RTP final stats — Sent: {sent} pkts | Recv: {recv} pkts");
 
-            if (_audioEndPoint != null)
+            if (_audioSink != null)
             {
-                try { _audioEndPoint.CloseAudioSink().Wait(500); } catch { }
-                try { _audioEndPoint.CloseAudio().Wait(500); } catch { }
-                _audioEndPoint = null;
+                try { _audioSink.CloseAudioSink().Wait(500); } catch { }
+                if (_audioSink is IDisposable sinkDisp) try { sinkDisp.Dispose(); } catch { }
+                _audioSink = null;
+            }
+
+            if (_audioSource != null)
+            {
+                try { _audioSource.CloseAudio().Wait(500); } catch { }
+                if (_audioSource is IDisposable srcDisp) try { srcDisp.Dispose(); } catch { }
+                _audioSource = null;
                 LogRtp("Audio endpoint closed");
             }
 
@@ -780,7 +889,8 @@ namespace WebRtcPhoneDialer.Services
             _currentCall != null &&
             (_currentCall.State == CallState.Initiating ||
              _currentCall.State == CallState.Ringing ||
-             _currentCall.State == CallState.Connected);
+             _currentCall.State == CallState.Connected ||
+             _currentCall.State == CallState.OnHold);
 
         public bool IsRegistered => RegistrationState == RegistrationState.Registered;
 
@@ -816,10 +926,6 @@ namespace WebRtcPhoneDialer.Services
             return DateTime.Now - _callStartTime;
         }
 
-        /// <summary>
-        /// Returns the local IP address that the OS would use to reach <paramref name="remoteIp"/>.
-        /// Uses a connected UDP socket (no actual packet sent) to determine the best local interface.
-        /// </summary>
         private static IPAddress GetLocalIpForRemote(IPAddress remoteIp)
         {
             try
@@ -842,11 +948,21 @@ namespace WebRtcPhoneDialer.Services
 
         private void SetCallState(CallState state)
         {
+            var previousState = _currentCall?.State ?? CallState.Idle;
             if (_currentCall != null)
                 _currentCall.State = state;
             if (state == CallState.Connected)
                 _callStartTime = DateTime.Now;
+
             CallStateChanged?.Invoke(this, state);
+
+            // Fire rich event with full context
+            if (_currentCall != null)
+            {
+                CallStateDetailChanged?.Invoke(this,
+                    new CallStateChangedEventArgs(previousState, state, _currentCall,
+                        state == CallState.Failed ? LastCallFailureReason : null));
+            }
         }
 
         // ── Logging helpers ───────────────────────────────────────────────────────
@@ -878,10 +994,6 @@ namespace WebRtcPhoneDialer.Services
             RtpDebugLogged?.Invoke(this, entry);
         }
 
-        /// <summary>
-        /// Estimate audio level (0..1) from a PCMU/PCMA encoded payload.
-        /// Uses mu-law decode to find the peak sample magnitude.
-        /// </summary>
         private static float CalculateAudioLevel(byte[] payload)
         {
             if (payload == null || payload.Length == 0) return 0f;
