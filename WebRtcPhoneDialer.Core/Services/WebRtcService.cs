@@ -355,11 +355,9 @@ namespace WebRtcPhoneDialer.Core.Services
 
             _mediaSession = BuildMediaSession();
 
-            await StunBindRtpSocket((NatAwareRtpSession)_mediaSession);
-
             var callUri = SIPURI.ParseSIPURIRelaxed($"sip:{remoteParty}@{host}");
             Logger.Info($"Calling {callUri}");
-            LogRtp("VoIP media session created (RTP/AVP)");
+            LogRtp("WebRTC media session created (DTLS-SRTP + ICE)");
 
             bool result;
             try
@@ -483,6 +481,7 @@ namespace WebRtcPhoneDialer.Core.Services
 
             Logger.Info($"Incoming INVITE from {req.Header.From.FromURI}");
             LogRtp($"Incoming call from {req.Header.From.FromURI}");
+            LogRtp($"Incoming INVITE SDP:\n{req.Body}");
 
             if (HasActiveCall)
             {
@@ -551,25 +550,28 @@ namespace WebRtcPhoneDialer.Core.Services
                 _userAgent.OnCallHungup += OnRemoteHangup;
 
                 _mediaSession = BuildMediaSession();
-                await StunBindRtpSocket((NatAwareRtpSession)_mediaSession);
 
                 var uas = _userAgent.AcceptCall(_pendingInvite);
-                await _userAgent.Answer(uas, _mediaSession);
 
-                _rtpPacketsSent = 0;
-                _rtpPacketsReceived = 0;
-                _rtpBytesSent = 0;
-                _rtpBytesReceived = 0;
-                _firstRtpSent = null;
-                _firstRtpReceived = null;
-
-                await StartAudioAsync();
-                StartRtpStatsTimer();
-                SetCallState(CallState.Connected);
+                LogRtp($"Answering incoming call — remote SDP:\n{_pendingInvite.Body}");
+                var answerResult = await _userAgent.Answer(uas, _mediaSession);
+                LogRtp($"Answer result: {answerResult}");
 
                 _pendingInvite = null;
-                LogRtp("Incoming call answered — audio active");
-                Logger.Info("Incoming call answered");
+
+                if (answerResult)
+                {
+                    LogRtp("SIP answer sent — starting RTP media...");
+                    Logger.Info("Incoming call answered — starting media");
+                    await StartMediaAfterSdpExchange();
+                }
+                else
+                {
+                    LogRtp("SIP answer failed");
+                    Logger.Warn("Answer() returned false");
+                    SetCallState(CallState.Failed);
+                    _currentCall = null;
+                }
             }
             catch (Exception ex)
             {
@@ -617,58 +619,15 @@ namespace WebRtcPhoneDialer.Core.Services
             SetCallState(CallState.Ringing);
         }
 
-        private async void OnCallAnswered(ISIPClientUserAgent uac, SIPResponse resp)
+        private void OnCallAnswered(ISIPClientUserAgent uac, SIPResponse resp)
         {
             if (_currentCall == null) { Logger.Debug("Ignoring stale OnCallAnswered callback"); return; }
-            Logger.Info("Call answered — starting RTP session and audio");
+            Logger.Info("Call answered by remote — starting media");
+            LogRtp("SIP call answered — starting RTP media...");
+            LogRtp($"Remote SDP answer:\n{resp.Body}");
 
-            _rtpPacketsSent = 0;
-            _rtpPacketsReceived = 0;
-            _rtpBytesSent = 0;
-            _rtpBytesReceived = 0;
-            _firstRtpSent = null;
-            _firstRtpReceived = null;
-
-            try
-            {
-                if (_mediaSession != null)
-                {
-                    await _mediaSession.Start();
-                    LogRtp($"RTP session started — IsStarted={_mediaSession.IsStarted}");
-                }
-            }
-            catch (Exception ex)
-            {
-                LogRtp($"RTP session start error: {ex.Message}");
-                Logger.Warn(ex, "Failed to start RTP session");
-            }
-
-            if (_mediaSession != null)
-            {
-                var audioDest = _mediaSession.AudioDestinationEndPoint;
-                var rtpChannel = _mediaSession.AudioStream?.GetRTPChannel();
-                LogRtp($"RTP local endpoint: {rtpChannel?.RTPLocalEndPoint}");
-                LogRtp($"RTP remote endpoint: {audioDest}");
-                LogRtp($"RTP AcceptFromAny: {_mediaSession.AcceptRtpFromAny}");
-
-                try
-                {
-                    var silence = new byte[160];
-                    Array.Fill(silence, (byte)0xFF);
-                    for (int i = 0; i < 5; i++)
-                        _mediaSession.SendAudio(160, silence);
-                    LogRtp($"Sent 5 NAT-pinhole silence packets to {audioDest}");
-                }
-                catch (Exception ex)
-                {
-                    LogRtp($"NAT-pinhole send failed: {ex.Message}");
-                }
-            }
-
-            await StartAudioAsync();
-            StartRtpStatsTimer();
-            SetCallState(CallState.Connected);
-            LogRtp("Call connected — audio streams active (mic → RTP, RTP → speaker)");
+            // Start RTP session and audio immediately (no ICE wait needed)
+            _ = Task.Run(() => StartMediaAfterSdpExchange());
         }
 
         private void OnCallFailed(ISIPClientUserAgent uac, string reason, SIPResponse? failResponse)
@@ -704,44 +663,7 @@ namespace WebRtcPhoneDialer.Core.Services
             }
         }
 
-        // ── NAT-aware RTP session ────────────────────────────────────────────────
-
-        private class NatAwareRtpSession : RTPSession
-        {
-            private IPAddress _announcedAddress;
-            private int _announcedPort;
-
-            public NatAwareRtpSession(IPAddress announcedAddress, IPAddress bindAddress)
-                : base(false, false, false, bindAddress)
-            {
-                _announcedAddress = announcedAddress;
-            }
-
-            public void UpdateAnnouncedEndpoint(IPAddress address, int port)
-            {
-                _announcedAddress = address;
-                _announcedPort = port;
-            }
-
-            public override SDP CreateOffer(IPAddress connectionAddress)
-            {
-                var addr = _announcedAddress ?? connectionAddress;
-                var sdp = base.CreateOffer(addr);
-                try { sdp.AddressOrHost = addr.ToString(); } catch { }
-
-                if (_announcedPort > 0)
-                {
-                    try
-                    {
-                        foreach (var media in sdp.Media)
-                            media.Port = _announcedPort;
-                    }
-                    catch { }
-                }
-
-                return sdp;
-            }
-        }
+        // ── WebRTC media session (DTLS-SRTP + ICE — compatible with FreeSWITCH WebRTC) ──
 
         private IPAddress? DiscoverPublicIpViaStun()
         {
@@ -761,108 +683,49 @@ namespace WebRtcPhoneDialer.Core.Services
             return null;
         }
 
-        private async Task StunBindRtpSocket(NatAwareRtpSession session)
+        /// <summary>
+        /// RTPSession subclass that puts the STUN-discovered public IP in the SDP
+        /// c= line so RTP can traverse NAT without ICE. Also enables SDES-SRTP
+        /// for encrypted media with FreeSWITCH.
+        /// </summary>
+        private sealed class NatRtpSession : RTPSession
         {
-            try
+            private readonly IPAddress? _publicIp;
+            private static readonly NLog.Logger _log = NLog.LogManager.GetCurrentClassLogger();
+
+            public NatRtpSession(IPAddress? publicIp, IPAddress bindAddress)
+                : base(false, false, false, bindAddress)
             {
-                var rtpChannel = session.AudioStream?.GetRTPChannel();
-                if (rtpChannel == null)
-                {
-                    LogRtp("STUN-bind: no RTP channel available yet");
-                    return;
-                }
-
-                var localEp = rtpChannel.RTPLocalEndPoint;
-                LogRtp($"STUN-bind: local RTP socket {localEp}");
-
-                var stunAddrs = await Dns.GetHostAddressesAsync("stun.l.google.com");
-                var stunIp = stunAddrs.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
-                if (stunIp == null)
-                {
-                    LogRtp("STUN-bind: could not resolve stun.l.google.com");
-                    return;
-                }
-
-                var stunEp = new IPEndPoint(stunIp, 19302);
-
-                var stunReq = new STUNMessage(STUNMessageTypesEnum.BindingRequest);
-                var reqBytes = stunReq.ToByteBuffer(null, false);
-
-                rtpChannel.Send(RTPChannelSocketsEnum.RTP, stunEp, reqBytes);
-                LogRtp($"STUN-bind: sent binding request to {stunEp} from port {rtpChannel.RTPPort}");
-
-                var rtpSocket = rtpChannel.RtpSocket;
-                var prevTimeout = rtpSocket.ReceiveTimeout;
-                rtpSocket.ReceiveTimeout = 3000;
-
-                IPEndPoint? mapped = null;
-                var recvBuf = new byte[512];
-                EndPoint remoteEp = new IPEndPoint(IPAddress.Any, 0);
-
-                for (int attempt = 0; attempt < 3; attempt++)
-                {
-                    try
-                    {
-                        var bytesRead = rtpSocket.ReceiveFrom(recvBuf, ref remoteEp);
-                        if (bytesRead > 0)
-                        {
-                            var stunResp = STUNMessage.ParseSTUNMessage(recvBuf, bytesRead);
-                            if (stunResp?.Header?.MessageType == STUNMessageTypesEnum.BindingSuccessResponse)
-                            {
-                                foreach (var attr in stunResp.Attributes)
-                                {
-                                    if (attr is STUNXORAddressAttribute xor)
-                                    {
-                                        mapped = new IPEndPoint(xor.Address, xor.Port);
-                                        break;
-                                    }
-                                    if (attr is STUNAddressAttribute addr &&
-                                        addr.AttributeType == STUNAttributeTypesEnum.MappedAddress)
-                                    {
-                                        mapped = new IPEndPoint(addr.Address, addr.Port);
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    catch (SocketException) { break; }
-                }
-
-                rtpSocket.ReceiveTimeout = prevTimeout;
-
-                if (mapped != null)
-                {
-                    _publicIp = mapped.Address;
-                    session.UpdateAnnouncedEndpoint(mapped.Address, mapped.Port);
-                    LogRtp($"STUN-bind: NAT mapped RTP → {mapped} (local {localEp})");
-                }
-                else
-                {
-                    LogRtp("STUN-bind: no STUN response, falling back to Via IP");
-                    if (_publicIp != null)
-                        session.UpdateAnnouncedEndpoint(_publicIp, 0);
-                }
+                _publicIp = publicIp;
             }
-            catch (Exception ex)
+
+            public override SDP CreateOffer(IPAddress offerAddress)
             {
-                LogRtp($"STUN-bind failed: {ex.Message}");
-                Logger.Warn(ex, "STUN bind from RTP socket failed");
-                if (_publicIp != null)
-                    session.UpdateAnnouncedEndpoint(_publicIp, 0);
+                var useAddr = _publicIp ?? offerAddress;
+                _log.Info($"NatRtpSession.CreateOffer — using address: {useAddr}");
+                var sdp = base.CreateOffer(useAddr);
+                _log.Info($"Outgoing OFFER SDP:\n{sdp}");
+                return sdp;
+            }
+
+            public override SDP CreateAnswer(IPAddress connectionAddress)
+            {
+                var useAddr = _publicIp ?? connectionAddress;
+                _log.Info($"NatRtpSession.CreateAnswer — using address: {useAddr}");
+                var sdp = base.CreateAnswer(useAddr);
+                _log.Info($"Outgoing ANSWER SDP:\n{sdp}");
+                return sdp;
             }
         }
 
-        // ── Media session (plain RTP/AVP — compatible with standard SIP proxies) ──────
-
         private RTPSession BuildMediaSession()
         {
-            var announceIp = _publicIp ?? _localIp ?? IPAddress.Any;
             var bindIp = _localIp ?? IPAddress.Any;
+            var publicIp = _publicIp ?? DiscoverPublicIpViaStun();
 
-            LogRtp($"Building media session — bind: {bindIp}, announce (SDP): {announceIp}");
+            LogRtp($"Building RTP media session — bind: {bindIp}, public: {publicIp}");
 
-            var session = new NatAwareRtpSession(announceIp, bindIp);
+            var session = new NatRtpSession(publicIp, bindIp);
             session.AcceptRtpFromAny = true;
 
             // Create platform-abstracted audio endpoints
@@ -943,6 +806,45 @@ namespace WebRtcPhoneDialer.Core.Services
             };
 
             return session;
+        }
+
+        /// <summary>
+        /// Called after SDP exchange completes (call answered or incoming call accepted).
+        /// Starts the RTP session and audio immediately — no ICE wait needed.
+        /// </summary>
+        private async Task StartMediaAfterSdpExchange()
+        {
+            LogRtp("SDP exchange complete — starting RTP media session");
+
+            _rtpPacketsSent = 0;
+            _rtpPacketsReceived = 0;
+            _rtpBytesSent = 0;
+            _rtpBytesReceived = 0;
+            _firstRtpSent = null;
+            _firstRtpReceived = null;
+
+            try
+            {
+                await _mediaSession!.Start();
+                LogRtp("RTP session started");
+            }
+            catch (Exception ex)
+            {
+                LogRtp($"RTP session start error: {ex.Message}");
+                Logger.Error(ex, "Failed to start RTP session");
+            }
+
+            await StartAudioAsync();
+            StartRtpStatsTimer();
+
+            if (_currentCall != null &&
+                (_currentCall.State == CallState.Initiating ||
+                 _currentCall.State == CallState.Ringing ||
+                 _currentCall.State == CallState.Connected))
+            {
+                SetCallState(CallState.Connected);
+                LogRtp("Call connected — audio streams active (mic → RTP, RTP → speaker)");
+            }
         }
 
         private async Task StartAudioAsync()
