@@ -1,5 +1,8 @@
 using System;
 using System.ComponentModel;
+using System.IO;
+using DrawingIcon = System.Drawing.Icon;
+using SystemIcons = System.Drawing.SystemIcons;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +14,7 @@ using WebRtcPhoneDialer.Core.Models;
 using WebRtcPhoneDialer.Core.Services;
 using WebRtcPhoneDialer.ViewModels;
 using WebRtcPhoneDialer.Windows;
+using WinForms = System.Windows.Forms;
 
 namespace WebRtcPhoneDialer.Views
 {
@@ -22,6 +26,8 @@ namespace WebRtcPhoneDialer.Views
         private AppSettings _settings;
         private CallSession? _currentCall;
         private bool _ownsService;
+        private WinForms.NotifyIcon? _trayIcon;
+        private bool _forceClose;
 
         /// <summary>Standalone mode — creates its own service.</summary>
         public MainWindow() : this(null) { }
@@ -68,6 +74,132 @@ namespace WebRtcPhoneDialer.Views
             PhoneNumberInput.TextChanged += (_, _) =>
                 InputPlaceholder.Visibility = string.IsNullOrEmpty(PhoneNumberInput.Text)
                     ? Visibility.Visible : Visibility.Collapsed;
+
+            // System tray icon (only when we own the service — standalone mode)
+            if (_ownsService)
+                SetupTrayIcon();
+        }
+
+        private void SetupTrayIcon()
+        {
+            _trayIcon = new WinForms.NotifyIcon();
+
+            // Load icon from embedded resource
+            try
+            {
+                var iconUri = new Uri("pack://application:,,,/WebRtcPhoneDialer;component/voipat.ico", UriKind.Absolute);
+                var iconStream = System.Windows.Application.GetResourceStream(iconUri)?.Stream;
+                if (iconStream != null)
+                    _trayIcon.Icon = new DrawingIcon(iconStream);
+            }
+            catch
+            {
+                _trayIcon.Icon = SystemIcons.Application;
+            }
+
+            _trayIcon.Text = "VOIPAT Phone";
+            _trayIcon.Visible = true;
+
+            // Double-click tray icon → restore window
+            _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+
+            // Right-click context menu
+            var menu = new WinForms.ContextMenuStrip();
+            menu.Items.Add("Show VOIPAT Phone", null, (_, _) => RestoreFromTray());
+            menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("Exit", null, (_, _) =>
+            {
+                _forceClose = true;
+                Close();
+            });
+            _trayIcon.ContextMenuStrip = menu;
+        }
+
+        private void RestoreFromTray()
+        {
+            Show();
+            WindowState = WindowState.Normal;
+            Activate();
+        }
+
+        protected override void OnStateChanged(EventArgs e)
+        {
+            base.OnStateChanged(e);
+            if (WindowState == WindowState.Minimized && _trayIcon != null)
+            {
+                Hide();
+                _trayIcon.ShowBalloonTip(1500, "VOIPAT Phone", "Running in system tray", WinForms.ToolTipIcon.Info);
+            }
+        }
+
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // Map key to dialer character
+            char? digit = e.Key switch
+            {
+                Key.D0 or Key.NumPad0 => '0',
+                Key.D1 or Key.NumPad1 => '1',
+                Key.D2 or Key.NumPad2 => '2',
+                Key.D3 or Key.NumPad3 => '3',
+                Key.D4 or Key.NumPad4 => '4',
+                Key.D5 or Key.NumPad5 => '5',
+                Key.D6 or Key.NumPad6 => '6',
+                Key.D7 or Key.NumPad7 => '7',
+                Key.D8 or Key.NumPad8 => '8',
+                Key.D9 or Key.NumPad9 => '9',
+                Key.Multiply => '*',
+                Key.OemPlus when (Keyboard.Modifiers & ModifierKeys.Shift) != 0 => '+',
+                _ => null
+            };
+
+            // Shift+3 = # on US keyboard
+            if (e.Key == Key.D3 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+                digit = '#';
+            // Shift+8 = * on US keyboard
+            if (e.Key == Key.D8 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+                digit = '*';
+
+            if (digit != null)
+            {
+                // Don't double-type if the TextBox already has focus
+                if (!PhoneNumberInput.IsFocused)
+                    PhoneNumberInput.Text += digit;
+                // Send DTMF during active call
+                if (_webRtcService.HasActiveCall)
+                {
+                    try { _webRtcService.SendDtmf((byte)digit.Value); } catch { }
+                }
+                return;
+            }
+
+            // Enter → Call or Hangup
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                if (HangupButton.IsEnabled)
+                    HangupButton_Click(this, new RoutedEventArgs());
+                else if (CallButton.IsEnabled && !string.IsNullOrWhiteSpace(PhoneNumberInput.Text))
+                    CallButton_Click(this, new RoutedEventArgs());
+                return;
+            }
+
+            // Escape → Hangup active call
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                if (HangupButton.IsEnabled)
+                    HangupButton_Click(this, new RoutedEventArgs());
+                return;
+            }
+
+            // Backspace → delete last char (when TextBox not focused)
+            if (e.Key == Key.Back && !PhoneNumberInput.IsFocused)
+            {
+                if (PhoneNumberInput.Text.Length > 0)
+                    PhoneNumberInput.Text = PhoneNumberInput.Text.Substring(0, PhoneNumberInput.Text.Length - 1);
+                e.Handled = true;
+                return;
+            }
         }
 
         private void Settings_Click(object sender, RoutedEventArgs e)
@@ -170,13 +302,12 @@ namespace WebRtcPhoneDialer.Views
             Dispatcher.Invoke(() =>
             {
                 _currentCall = call;
-                var result = MessageBox.Show(
-                    $"Incoming call from {call.RemoteParty}\n\nAnswer?",
-                    "Incoming Call",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
 
-                if (result == MessageBoxResult.Yes)
+                var popup = new IncomingCallWindow(call.RemoteParty, _settings);
+                popup.Owner = this;
+                var answered = popup.ShowDialog() == true && popup.Answered;
+
+                if (answered)
                 {
                     _ = AnswerIncomingCallAsync();
                 }
@@ -395,11 +526,27 @@ namespace WebRtcPhoneDialer.Views
         {
             if (_webRtcService == null) return;
 
+            // In standalone mode: minimize to tray instead of closing (unless forced)
+            if (_ownsService && !_forceClose && _trayIcon != null)
+            {
+                e.Cancel = true;
+                WindowState = WindowState.Minimized;
+                return;
+            }
+
             // Unsubscribe events regardless of ownership
             _webRtcService.RegistrationStateChanged -= OnRegistrationStateChanged;
             _webRtcService.CallStateChanged -= OnCallStateChanged;
             _webRtcService.IncomingCall -= OnIncomingCall;
             _callTimer.Stop();
+
+            // Dispose tray icon
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _trayIcon = null;
+            }
 
             if (!_ownsService) return; // parent manages lifecycle
 

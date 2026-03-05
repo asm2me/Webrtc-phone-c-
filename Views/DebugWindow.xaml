@@ -1,7 +1,7 @@
 <Window x:Class="WebRtcPhoneDialer.Views.DebugWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Debug / SIP Log" Height="620" Width="740"
+        Title="VOIPAT Phone - Debug / SIP Log" Height="620" Width="740"
         WindowStartupLocation="CenterOwner"
         Background="#0D0D1A">
 

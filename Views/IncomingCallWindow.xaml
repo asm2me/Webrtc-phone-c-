@@ -1,0 +1,196 @@
+<Window x:Class="WebRtcPhoneDialer.Views.IncomingCallWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VOIPAT Phone - Incoming Call"
+        Width="340" Height="420"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        Topmost="True"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Border CornerRadius="20" Padding="0">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0.3,1">
+                <GradientStop Color="#1A1A2E" Offset="0"/>
+                <GradientStop Color="#0D0D1A" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="30" Opacity="0.6" ShadowDepth="5"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Pulsing ring indicator -->
+            <Grid Grid.Row="0" HorizontalAlignment="Center" Margin="0,35,0,0">
+                <Ellipse x:Name="PulseRing" Width="100" Height="100"
+                         StrokeThickness="2" Opacity="0">
+                    <Ellipse.Stroke>
+                        <SolidColorBrush Color="#536DFE"/>
+                    </Ellipse.Stroke>
+                </Ellipse>
+                <Ellipse Width="80" Height="80">
+                    <Ellipse.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#536DFE" Offset="0"/>
+                            <GradientStop Color="#7C4DFF" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+                <TextBlock Text="&#x260E;" FontSize="36" FontFamily="Segoe UI Symbol"
+                           Foreground="White"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- "Incoming Call" label -->
+            <TextBlock Grid.Row="1"
+                       Text="Incoming Call"
+                       FontSize="13" FontWeight="Light"
+                       Foreground="#8888AA"
+                       HorizontalAlignment="Center"
+                       Margin="0,18,0,0"/>
+
+            <!-- Caller ID -->
+            <TextBlock x:Name="CallerIdText"
+                       Grid.Row="2"
+                       Text="Unknown"
+                       FontSize="24" FontWeight="SemiBold"
+                       Foreground="#E0E0F0"
+                       HorizontalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Margin="20,6,20,0"/>
+
+            <!-- Status text (Ringing...) -->
+            <TextBlock x:Name="StatusText"
+                       Grid.Row="3"
+                       Text="Ringing..."
+                       FontSize="14" FontWeight="Light"
+                       Foreground="#6C6C8A"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Top"
+                       Margin="0,8,0,0"/>
+
+            <!-- Action buttons -->
+            <Grid Grid.Row="4" Margin="20,0,20,35">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Reject -->
+                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                    <Button x:Name="RejectButton" Click="Reject_Click"
+                            Width="64" Height="64" Cursor="Hand"
+                            ToolTip="Reject (Esc)">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Grid>
+                                    <Ellipse x:Name="bg">
+                                        <Ellipse.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF1744" Offset="0"/>
+                                                <GradientStop Color="#D50000" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bg" Property="Fill">
+                                            <Setter.Value>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                    <GradientStop Color="#FF5252" Offset="0"/>
+                                                    <GradientStop Color="#FF1744" Offset="1"/>
+                                                </LinearGradientBrush>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock Text="&#x2716;" FontSize="22" Foreground="White"
+                                   FontFamily="Segoe UI Symbol"/>
+                    </Button>
+                    <TextBlock Text="Reject" FontSize="11" Foreground="#8888AA"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <!-- Mute ringtone -->
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                    <Button x:Name="MuteButton" Click="Mute_Click"
+                            Width="56" Height="56" Cursor="Hand"
+                            ToolTip="Mute ringtone (M)">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Grid>
+                                    <Ellipse x:Name="bg" Fill="#1A1A2E"/>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bg" Property="Fill" Value="#2A2A45"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock x:Name="MuteIcon" Text="&#x1F50A;" FontSize="20" Foreground="#8888AA"
+                                   FontFamily="Segoe UI Symbol"/>
+                    </Button>
+                    <TextBlock x:Name="MuteLabel" Text="Mute" FontSize="11" Foreground="#8888AA"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <!-- Answer -->
+                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                    <Button x:Name="AnswerButton" Click="Answer_Click"
+                            Width="64" Height="64" Cursor="Hand"
+                            ToolTip="Answer (Enter)">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Grid>
+                                    <Ellipse x:Name="bg">
+                                        <Ellipse.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#00C853" Offset="0"/>
+                                                <GradientStop Color="#009624" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bg" Property="Fill">
+                                            <Setter.Value>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                    <GradientStop Color="#2EFF6E" Offset="0"/>
+                                                    <GradientStop Color="#00C853" Offset="1"/>
+                                                </LinearGradientBrush>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock Text="&#x260E;" FontSize="26" Foreground="White"
+                                   FontFamily="Segoe UI Symbol"/>
+                    </Button>
+                    <TextBlock Text="Answer" FontSize="11" Foreground="#8888AA"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

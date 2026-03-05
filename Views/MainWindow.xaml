@@ -1,11 +1,13 @@
 <Window x:Class="WebRtcPhoneDialer.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WebRTC Phone Dialer" Height="820" Width="420"
+        Title="VOIPAT Phone" Height="820" Width="420"
+        Icon="pack://application:,,,/WebRtcPhoneDialer;component/voipat.ico"
         WindowStartupLocation="CenterScreen"
         Background="#0D0D1A"
         ResizeMode="CanMinimize"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
         <!-- Dialer pad button style -->

@@ -59,6 +59,10 @@ namespace ExampleApp
         private bool _isOnHold;
         private System.Windows.Forms.Timer _durationTimer = null!;
 
+        // ── System tray ──
+        private NotifyIcon? _trayIcon;
+        private bool _forceClose;
+
         public MainForm()
         {
             _phone = new PhoneDialerHost();
@@ -66,11 +70,13 @@ namespace ExampleApp
             WireEvents();
             PopulateAudioDevices();
             LoadSettings();
+            SetupTrayIcon();
+            KeyPreview = true;
         }
 
         private void InitializeUI()
         {
-            Text = "Phone Dialer SDK - Example App";
+            Text = "VOIPAT Phone - Example App";
             Size = new Size(900, 750);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
@@ -654,13 +660,138 @@ namespace ExampleApp
         }
 
         // ═══════════════════════════════════════════════════════════════════════
+        // SYSTEM TRAY
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private void SetupTrayIcon()
+        {
+            _trayIcon = new NotifyIcon();
+            _trayIcon.Icon = SystemIcons.Application;
+            _trayIcon.Text = "VOIPAT Phone";
+            _trayIcon.Visible = true;
+
+            _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Show VOIPAT Phone", null, (_, _) => RestoreFromTray());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Exit", null, (_, _) =>
+            {
+                _forceClose = true;
+                Close();
+            });
+            _trayIcon.ContextMenuStrip = menu;
+        }
+
+        private void RestoreFromTray()
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
+            Activate();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (WindowState == FormWindowState.Minimized && _trayIcon != null)
+            {
+                Hide();
+                _trayIcon.ShowBalloonTip(1500, "VOIPAT Phone", "Running in system tray", ToolTipIcon.Info);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // KEYBOARD SUPPORT
+        // ═══════════════════════════════════════════════════════════════════════
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            // Map key to dialer digit
+            char? digit = keyData switch
+            {
+                Keys.D0 or Keys.NumPad0 => '0',
+                Keys.D1 or Keys.NumPad1 => '1',
+                Keys.D2 or Keys.NumPad2 => '2',
+                Keys.D3 or Keys.NumPad3 => '3',
+                Keys.D4 or Keys.NumPad4 => '4',
+                Keys.D5 or Keys.NumPad5 => '5',
+                Keys.D6 or Keys.NumPad6 => '6',
+                Keys.D7 or Keys.NumPad7 => '7',
+                Keys.D8 or Keys.NumPad8 => '8',
+                Keys.D9 or Keys.NumPad9 => '9',
+                Keys.Multiply => '*',
+                (Keys.Shift | Keys.D3) => '#',
+                (Keys.Shift | Keys.D8) => '*',
+                (Keys.Shift | Keys.Oemplus) => '+',
+                _ => null
+            };
+
+            if (digit != null)
+            {
+                // Only append if the dial textbox doesn't already have focus
+                if (!_txtDialNumber.Focused)
+                    _txtDialNumber.Text += digit;
+                // Send DTMF during active call
+                if (_phone.HasActiveCall)
+                {
+                    try { _phone.SendDtmf((byte)digit.Value); } catch { }
+                }
+                return true;
+            }
+
+            // Enter → Call or Hangup
+            if (keyData == Keys.Enter)
+            {
+                if (_btnHangup.Enabled)
+                    BtnHangup_Click(this, EventArgs.Empty);
+                else if (_btnCall.Enabled && !string.IsNullOrWhiteSpace(_txtDialNumber.Text))
+                    BtnCall_Click(this, EventArgs.Empty);
+                return true;
+            }
+
+            // Escape → Hangup active call
+            if (keyData == Keys.Escape)
+            {
+                if (_btnHangup.Enabled)
+                    BtnHangup_Click(this, EventArgs.Empty);
+                return true;
+            }
+
+            // Backspace → delete last char (when dial textbox not focused)
+            if (keyData == Keys.Back && !_txtDialNumber.Focused)
+            {
+                if (_txtDialNumber.Text.Length > 0)
+                    _txtDialNumber.Text = _txtDialNumber.Text.Substring(0, _txtDialNumber.Text.Length - 1);
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
         // CLEANUP
         // ═══════════════════════════════════════════════════════════════════════
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            // Minimize to tray instead of closing (unless forced)
+            if (!_forceClose && _trayIcon != null)
+            {
+                e.Cancel = true;
+                WindowState = FormWindowState.Minimized;
+                return;
+            }
+
             _durationTimer.Stop();
             _wpfPhone?.Close();
+
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _trayIcon = null;
+            }
+
             if (_phone.IsRegistered)
                 _phone.Unregister();
             _phone.Dispose();
