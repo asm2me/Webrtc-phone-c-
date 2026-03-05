@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.17763</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="WebRtcPhoneDialer.Core">
+      <HintPath>..\lib\WebRtcPhoneDialer.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="WebRtcPhoneDialer.Windows">
+      <HintPath>..\lib\WebRtcPhoneDialer.Windows.dll</HintPath>
+    </Reference>
+    <Reference Include="SIPSorcery">
+      <HintPath>..\lib\SIPSorcery.dll</HintPath>
+    </Reference>
+    <Reference Include="SIPSorceryMedia.Abstractions">
+      <HintPath>..\lib\SIPSorceryMedia.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="SIPSorceryMedia.Windows">
+      <HintPath>..\lib\SIPSorceryMedia.Windows.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\lib\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>..\lib\NLog.dll</HintPath>
+    </Reference>
+    <Reference Include="websocket-sharp">
+      <HintPath>..\lib\websocket-sharp.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio.Core">
+      <HintPath>..\lib\NAudio.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio.WinMM">
+      <HintPath>..\lib\NAudio.WinMM.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio">
+      <HintPath>..\lib\NAudio.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio.Wasapi">
+      <HintPath>..\lib\NAudio.Wasapi.dll</HintPath>
+    </Reference>
+    <Reference Include="Concentus">
+      <HintPath>..\lib\Concentus.dll</HintPath>
+    </Reference>
+    <Reference Include="DnsClient">
+      <HintPath>..\lib\DnsClient.dll</HintPath>
+    </Reference>
+    <Reference Include="BouncyCastle.Cryptography">
+      <HintPath>..\lib\BouncyCastle.Cryptography.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging">
+      <HintPath>..\lib\Microsoft.Extensions.Logging.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>..\lib\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection">
+      <HintPath>..\lib\Microsoft.Extensions.DependencyInjection.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
+      <HintPath>..\lib\Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Options">
+      <HintPath>..\lib\Microsoft.Extensions.Options.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Primitives">
+      <HintPath>..\lib\Microsoft.Extensions.Primitives.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Diagnostics.DiagnosticSource">
+      <HintPath>..\lib\System.Diagnostics.DiagnosticSource.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
