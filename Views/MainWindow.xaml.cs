@@ -75,9 +75,8 @@ namespace WebRtcPhoneDialer.Views
                 InputPlaceholder.Visibility = string.IsNullOrEmpty(PhoneNumberInput.Text)
                     ? Visibility.Visible : Visibility.Collapsed;
 
-            // System tray icon (only when we own the service — standalone mode)
-            if (_ownsService)
-                SetupTrayIcon();
+            // System tray icon (always — works in both standalone and hosted mode)
+            SetupTrayIcon();
         }
 
         private void SetupTrayIcon()
@@ -526,8 +525,8 @@ namespace WebRtcPhoneDialer.Views
         {
             if (_webRtcService == null) return;
 
-            // In standalone mode: minimize to tray instead of closing (unless forced)
-            if (_ownsService && !_forceClose && _trayIcon != null)
+            // Minimize to tray instead of closing (unless forced)
+            if (!_forceClose && _trayIcon != null)
             {
                 e.Cancel = true;
                 WindowState = WindowState.Minimized;
