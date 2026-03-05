@@ -4,7 +4,7 @@ using System.Linq;
 using System.Media;
 using System.Windows;
 using WebRtcPhoneDialer.Core.Models;
-using WebRtcPhoneDialer.Core.Services;
+using WebRtcPhoneDialer.Core.Interfaces;
 using WebRtcPhoneDialer.ViewModels;
 using WebRtcPhoneDialer.Windows;
 
@@ -12,10 +12,10 @@ namespace WebRtcPhoneDialer.Views
 {
     public partial class SettingsWindow : Window
     {
-        private readonly WebRtcService _webRtcService;
+        private readonly IPhoneService _webRtcService;
         private readonly SettingsViewModel _viewModel;
 
-        public SettingsWindow(AppSettings settings, WebRtcService webRtcService)
+        public SettingsWindow(AppSettings settings, IPhoneService webRtcService)
         {
             InitializeComponent();
             _webRtcService = webRtcService;

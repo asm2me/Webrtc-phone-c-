@@ -1,13 +1,14 @@
 using System;
 using System.Collections.ObjectModel;
 using WebRtcPhoneDialer.Core.Models;
+using WebRtcPhoneDialer.Core.Interfaces;
 using WebRtcPhoneDialer.Core.Services;
 
 namespace WebRtcPhoneDialer.ViewModels
 {
     public class MainWindowViewModel : BaseViewModel
     {
-        private readonly WebRtcService _webRtcService;
+        private readonly IPhoneService _webRtcService;
         private readonly CallHistoryService _callHistoryService = new CallHistoryService();
         private string _phoneNumber = string.Empty;
         private string _callStatus = "Ready";
@@ -66,7 +67,7 @@ namespace WebRtcPhoneDialer.ViewModels
             }
         }
 
-        public MainWindowViewModel(WebRtcService webRtcService)
+        public MainWindowViewModel(IPhoneService webRtcService)
         {
             _webRtcService = webRtcService;
         }

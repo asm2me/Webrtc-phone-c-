@@ -5,6 +5,8 @@ using WebRtcPhoneDialer.Core.Enums;
 using WebRtcPhoneDialer.Core.Events;
 using WebRtcPhoneDialer.Core.Models;
 using WebRtcPhoneDialer.Windows;
+using WpfApp = System.Windows.Application;
+using WpfWindow = WebRtcPhoneDialer.Views.MainWindow;
 
 namespace ExampleApp
 {
@@ -199,6 +201,22 @@ namespace ExampleApp
             audioLayout.Controls.Add(_spkLevel, 1, 1);
             grpAudio.Controls.Add(audioLayout);
             leftScroll.Controls.Add(grpAudio);
+
+            // Show Elegant Phone Button
+            var btnShowPhone = new Button
+            {
+                Text = "Show Elegant Phone",
+                Width = 380,
+                Height = 42,
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                BackColor = Color.FromArgb(63, 81, 181),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
+            };
+            btnShowPhone.FlatAppearance.BorderSize = 0;
+            btnShowPhone.Click += BtnShowPhone_Click;
+            leftScroll.Controls.Add(btnShowPhone);
 
             leftPanel.Controls.Add(leftScroll);
             mainLayout.Controls.Add(leftPanel, 0, 0);
@@ -610,15 +628,43 @@ namespace ExampleApp
         }
 
         // ═══════════════════════════════════════════════════════════════════════
+        // SHOW ELEGANT PHONE (WPF)
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private WpfWindow? _wpfPhone;
+
+        private void BtnShowPhone_Click(object? sender, EventArgs e)
+        {
+            if (_wpfPhone != null && _wpfPhone.IsVisible)
+            {
+                _wpfPhone.Activate();
+                return;
+            }
+
+            // Ensure WPF Application exists (required for WPF windows in WinForms host)
+            if (WpfApp.Current == null)
+            {
+                var app = new WpfApp { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+            }
+
+            _wpfPhone = new WpfWindow(_phone);
+            _wpfPhone.Closed += (s, args) => _wpfPhone = null;
+            _wpfPhone.Show();
+            AppendLog("[UI] Opened elegant WPF phone (shared service — events sync both UIs).");
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
         // CLEANUP
         // ═══════════════════════════════════════════════════════════════════════
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _durationTimer.Stop();
+            _wpfPhone?.Close();
             if (_phone.IsRegistered)
                 _phone.Unregister();
             _phone.Dispose();
+            WpfApp.Current?.Shutdown();
             base.OnFormClosing(e);
         }
     }

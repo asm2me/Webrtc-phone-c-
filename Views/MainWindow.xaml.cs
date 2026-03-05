@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using WebRtcPhoneDialer.Core.Enums;
+using WebRtcPhoneDialer.Core.Interfaces;
 using WebRtcPhoneDialer.Core.Models;
 using WebRtcPhoneDialer.Core.Services;
 using WebRtcPhoneDialer.ViewModels;
@@ -16,15 +17,38 @@ namespace WebRtcPhoneDialer.Views
     public partial class MainWindow : Window
     {
         private MainWindowViewModel _viewModel;
-        private WebRtcService _webRtcService;
+        private IPhoneService _webRtcService;
         private System.Windows.Threading.DispatcherTimer _callTimer;
         private AppSettings _settings;
         private CallSession? _currentCall;
+        private bool _ownsService;
 
-        public MainWindow()
+        /// <summary>Standalone mode — creates its own service.</summary>
+        public MainWindow() : this(null) { }
+
+        /// <summary>
+        /// Hosted mode — uses an externally provided IPhoneService.
+        /// When external, the window does NOT dispose/unregister on close.
+        /// All call actions go through the shared service so the parent sees events.
+        /// </summary>
+        public MainWindow(IPhoneService? externalService)
         {
             InitializeComponent();
-            _webRtcService = new WebRtcService(new WindowsAudioEndPointFactory());
+
+            if (externalService != null)
+            {
+                _webRtcService = externalService;
+                _ownsService = false;
+                _settings = new AppSettings();
+            }
+            else
+            {
+                _webRtcService = new WebRtcService(new WindowsAudioEndPointFactory());
+                _ownsService = true;
+                _settings = AppSettings.Load();
+                _webRtcService.Configure(_settings);
+            }
+
             _viewModel = new MainWindowViewModel(_webRtcService);
             DataContext = _viewModel;
 
@@ -32,14 +56,13 @@ namespace WebRtcPhoneDialer.Views
             _callTimer.Interval = TimeSpan.FromSeconds(1);
             _callTimer.Tick += CallTimer_Tick;
 
-            // Load and apply saved settings on startup
-            _settings = AppSettings.Load();
-            _webRtcService.Configure(_settings);
-
             // Subscribe to state change events
             _webRtcService.RegistrationStateChanged += OnRegistrationStateChanged;
             _webRtcService.CallStateChanged += OnCallStateChanged;
             _webRtcService.IncomingCall += OnIncomingCall;
+
+            // Sync current state into UI (important when shared service is already registered)
+            UpdateRegistrationStatus(_webRtcService.RegistrationState);
 
             // Placeholder visibility for phone input
             PhoneNumberInput.TextChanged += (_, _) =>
@@ -372,6 +395,14 @@ namespace WebRtcPhoneDialer.Views
         {
             if (_webRtcService == null) return;
 
+            // Unsubscribe events regardless of ownership
+            _webRtcService.RegistrationStateChanged -= OnRegistrationStateChanged;
+            _webRtcService.CallStateChanged -= OnCallStateChanged;
+            _webRtcService.IncomingCall -= OnIncomingCall;
+            _callTimer.Stop();
+
+            if (!_ownsService) return; // parent manages lifecycle
+
             // If there's an active call, ask for confirmation
             if (_webRtcService.HasActiveCall)
             {
@@ -387,7 +418,6 @@ namespace WebRtcPhoneDialer.Views
                     return;
                 }
 
-                // Hang up the active call
                 try
                 {
                     await _webRtcService.EndCallAsync();
@@ -395,10 +425,7 @@ namespace WebRtcPhoneDialer.Views
                 catch { }
             }
 
-            // Unregister from SIP server
             _webRtcService.Unregister();
-
-            // Dispose all resources
             _webRtcService.Dispose();
         }
     }

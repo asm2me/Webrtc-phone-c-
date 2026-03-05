@@ -13,12 +13,16 @@
   <ItemGroup>
     <Compile Remove="WebRtcPhoneDialer.Core\**" />
     <Compile Remove="WebRtcPhoneDialer.Windows\**" />
+    <Compile Remove="SDK\**" />
     <None Remove="WebRtcPhoneDialer.Core\**" />
     <None Remove="WebRtcPhoneDialer.Windows\**" />
+    <None Remove="SDK\**" />
     <Content Remove="WebRtcPhoneDialer.Core\**" />
     <Content Remove="WebRtcPhoneDialer.Windows\**" />
+    <Content Remove="SDK\**" />
     <EmbeddedResource Remove="WebRtcPhoneDialer.Core\**" />
     <EmbeddedResource Remove="WebRtcPhoneDialer.Windows\**" />
+    <EmbeddedResource Remove="SDK\**" />
   </ItemGroup>
 
   <ItemGroup>

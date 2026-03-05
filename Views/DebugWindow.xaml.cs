@@ -7,13 +7,14 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using WebRtcPhoneDialer.Core.Enums;
 using WebRtcPhoneDialer.Core.Events;
+using WebRtcPhoneDialer.Core.Interfaces;
 using WebRtcPhoneDialer.Core.Services;
 
 namespace WebRtcPhoneDialer.Views
 {
     public partial class DebugWindow : Window
     {
-        private readonly WebRtcService _webRtcService;
+        private readonly IPhoneService _webRtcService;
 
         // Colour palette (dark-terminal theme)
         private static readonly SolidColorBrush BrushTimestamp = new(Color.FromRgb(0x80, 0x80, 0x80));
@@ -24,7 +25,7 @@ namespace WebRtcPhoneDialer.Views
         private static readonly SolidColorBrush BrushBody      = new(Color.FromRgb(0xCC, 0xCC, 0xCC)); // light grey — headers/SDP
         private static readonly SolidColorBrush BrushRtp       = new(Color.FromRgb(0x4E, 0xC9, 0xB0)); // cyan — RTP debug
 
-        public DebugWindow(WebRtcService webRtcService)
+        public DebugWindow(IPhoneService webRtcService)
         {
             InitializeComponent();
             _webRtcService = webRtcService;
@@ -120,7 +121,7 @@ namespace WebRtcPhoneDialer.Views
         {
             var cfg  = _webRtcService.GetConfiguration();
             var call = _webRtcService.GetCurrentCall();
-            var publicIp = _webRtcService.GetPublicIp();
+            var publicIp = (_webRtcService as WebRtcService)?.GetPublicIp();
             var stats = _webRtcService.GetRtpStats();
 
             var sb = new StringBuilder();
