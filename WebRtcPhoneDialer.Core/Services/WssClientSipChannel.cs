@@ -24,8 +24,10 @@ namespace WebRtcPhoneDialer.Core.Services
         private readonly SIPEndPoint _localEp;
         private ClientWebSocket?     _ws;
         private CancellationTokenSource? _cts;
-
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+        /// <summary>Raised when the WebSocket connection drops (server close, error, etc.).</summary>
+        public event EventHandler? Disconnected;
 
         public WssClientSipChannel(Uri serverUri, SIPEndPoint localSipEp, SIPEndPoint remoteSipEp)
             : base(Encoding.UTF8, Encoding.UTF8)
@@ -48,6 +50,10 @@ namespace WebRtcPhoneDialer.Core.Services
 
             _ws.Options.AddSubProtocol("sip");
             _ws.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+            // IMPORTANT: Disable .NET's built-in WebSocket ping — FreeSWITCH closes
+            // the connection when it receives .NET's ping frames. SIP-level keepalive
+            // (OPTIONS requests) is used instead to keep the connection alive.
+            _ws.Options.KeepAliveInterval = TimeSpan.Zero;
 
             Logger.Info($"WssClientSipChannel connecting to {_serverUri}");
             await _ws.ConnectAsync(_serverUri, _cts.Token);
@@ -81,22 +87,32 @@ namespace WebRtcPhoneDialer.Core.Services
                         acc.SetLength(0);
                         acc.Position = 0;
 
-                        if (SIPMessageReceived != null)
+                        try
                         {
-                            await SIPMessageReceived(
-                                this,
-                                _localEp,
-                                _remoteEp,
-                                data);
+                            if (SIPMessageReceived != null)
+                            {
+                                await SIPMessageReceived(
+                                    this,
+                                    _localEp,
+                                    _remoteEp,
+                                    data);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Warn(ex, "WssClientSipChannel: error processing SIP message");
                         }
                     }
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) { return; }
             catch (Exception ex)
             {
                 Logger.Warn(ex, "WssClientSipChannel receive loop error");
             }
+
+            Logger.Info("WssClientSipChannel: connection lost, raising Disconnected event");
+            try { Disconnected?.Invoke(this, EventArgs.Empty); } catch { }
         }
 
         public override Task<SocketError> SendAsync(

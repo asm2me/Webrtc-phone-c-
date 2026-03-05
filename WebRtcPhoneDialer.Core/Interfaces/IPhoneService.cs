@@ -120,5 +120,8 @@ namespace WebRtcPhoneDialer.Core.Interfaces
 
         /// <summary>Fired when an incoming call is received. The CallSession contains the caller info.</summary>
         event EventHandler<CallSession>? IncomingCall;
+
+        /// <summary>Fired when the remote caller cancels (hangs up) while ringing.</summary>
+        event EventHandler? IncomingCallCanceled;
     }
 }

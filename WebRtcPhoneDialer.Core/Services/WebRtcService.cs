@@ -24,6 +24,8 @@ namespace WebRtcPhoneDialer.Core.Services
         private WebRtcConfiguration _config;
         private DateTime       _callStartTime;
         private bool           _disposed = false;
+        private bool           _isReconnecting = false;
+        private Timer?         _sipKeepAliveTimer;
         private volatile bool  _micMuted = false;
 
         // SIP domain override (Settings > SIP Domain field)
@@ -55,6 +57,7 @@ namespace WebRtcPhoneDialer.Core.Services
         private IPAddress?                   _localIp;
         private RTPSession?                  _mediaSession;
 
+
         // Platform-abstracted audio endpoint
         private IAudioSource?                _audioSource;
         private IAudioSink?                  _audioSink;
@@ -82,6 +85,7 @@ namespace WebRtcPhoneDialer.Core.Services
 
         // Incoming call event
         public event EventHandler<CallSession>? IncomingCall;
+        public event EventHandler? IncomingCallCanceled;
 
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -169,12 +173,16 @@ namespace WebRtcPhoneDialer.Core.Services
                 LogRtp($"Connecting WebSocket to {sigUri}");
 
                 _wssChannel = new WssClientSipChannel(sigUri, localSipEp, proxyEp);
+                _wssChannel.Disconnected += OnWssDisconnected;
                 await _wssChannel.ConnectAsync();
 
                 LogRtp($"WebSocket connected — State: {_wssChannel != null}");
 
                 _sipTransport = new SIPTransport();
+                // IMPORTANT: Only use WSS channel — prevent SIPSorcery from auto-creating UDP/TCP channels
                 _sipTransport.AddSIPChannel(_wssChannel);
+                // Tell SIPSorcery to substitute Contact URI hosts with our server host for NAT traversal
+                _sipTransport.ContactHost = host;
 
                 _sipTransport.SIPRequestInTraceEvent  += (_, _, req)  => LogSipReceived(req.ToString());
                 _sipTransport.SIPResponseInTraceEvent += (_, _, resp) => LogSipReceived(resp.ToString());
@@ -184,7 +192,9 @@ namespace WebRtcPhoneDialer.Core.Services
                 // Handle incoming calls (INVITE requests)
                 _sipTransport.SIPTransportRequestReceived += OnSipRequestReceived;
 
-                _regAgent = new SIPRegistrationUserAgent(_sipTransport, user, pass, $"sip:{user}@{host}", 3600);
+                // Use transport=wss in server URI so SIPSorcery routes REGISTER over WebSocket
+                _regAgent = new SIPRegistrationUserAgent(
+                    _sipTransport, user, pass, $"sip:{user}@{host};transport=wss", 3600);
                 _regAgent.OutboundProxy = proxyEp;
                 _regAgent.RegistrationSuccessful += OnRegistrationSuccessful;
                 _regAgent.RegistrationFailed     += OnRegistrationFailed;
@@ -228,6 +238,37 @@ namespace WebRtcPhoneDialer.Core.Services
             RegistrationMessage = $"Registered as {uri.User}@{uri.HostAddress}";
             SetRegistrationState(RegistrationState.Registered);
             Logger.Info($"SIP registered: {uri} (public IP: {_publicIp})");
+
+            // Start SIP OPTIONS keepalive — sends through the WSS channel to keep the
+            // WebSocket alive (replaces .NET's built-in ping which FreeSWITCH rejects)
+            _sipKeepAliveTimer?.Dispose();
+            _sipKeepAliveTimer = new Timer(SendSipKeepAlive, null,
+                TimeSpan.FromSeconds(25), TimeSpan.FromSeconds(25));
+        }
+
+        private async void SendSipKeepAlive(object? state)
+        {
+            try
+            {
+                if (_sipTransport == null || _proxyEp == null || _config.Username == null) return;
+
+                var host = _sipDomain ?? new Uri(_config.SignalingServerUrl!).Host;
+                var optionsReq = SIPRequest.GetRequest(
+                    SIPMethodsEnum.OPTIONS,
+                    SIPURI.ParseSIPURIRelaxed($"sip:{host};transport=wss"),
+                    new SIPToHeader(null, SIPURI.ParseSIPURIRelaxed($"sip:{host}"), null),
+                    new SIPFromHeader(null, SIPURI.ParseSIPURIRelaxed($"sip:{_config.Username}@{host}"), CallProperties.CreateNewTag()));
+                optionsReq.Header.Contact = new List<SIPContactHeader>
+                {
+                    SIPContactHeader.GetDefaultSIPContactHeader(SIPSchemesEnum.sip)
+                };
+
+                await _sipTransport.SendRequestAsync(optionsReq);
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug(ex, "SIP OPTIONS keep-alive failed");
+            }
         }
 
         private void OnRegistrationFailed(SIPURI uri, SIPResponse? failResponse, string errorMessage)
@@ -239,6 +280,46 @@ namespace WebRtcPhoneDialer.Core.Services
             LogRtp($"[REG FAILED] {reason}");
             SetRegistrationState(RegistrationState.Failed);
             Logger.Warn($"SIP registration failed: {reason}");
+        }
+
+        private async void OnWssDisconnected(object? sender, EventArgs e)
+        {
+            if (_disposed || _isReconnecting) return;
+
+            // Don't auto-reconnect during an active call — it would drop the call
+            if (_currentCall != null && _currentCall.State == CallState.Connected)
+            {
+                Logger.Warn("WebSocket disconnected during active call");
+                LogRtp("[WSS] Connection lost during active call");
+                return;
+            }
+
+            _isReconnecting = true;
+
+            Logger.Warn("WebSocket disconnected — will attempt to reconnect");
+            LogRtp("[WSS] Connection lost. Reconnecting...");
+            SetRegistrationState(RegistrationState.Registering);
+            RegistrationMessage = "Connection lost. Reconnecting...";
+
+            // Wait before reconnecting to avoid tight loops
+            await Task.Delay(5000);
+
+            if (_disposed) { _isReconnecting = false; return; }
+
+            try
+            {
+                TearDown();
+                await RegisterAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Reconnect failed");
+                LogRtp($"[WSS] Reconnect failed: {ex.Message}");
+                RegistrationMessage = "Connection lost. Please re-register manually.";
+                SetRegistrationState(RegistrationState.Failed);
+            }
+
+            _isReconnecting = false;
         }
 
         // ── Call management ───────────────────────────────────────────────────────
@@ -306,14 +387,21 @@ namespace WebRtcPhoneDialer.Core.Services
             _currentCall.EndTime = DateTime.Now;
             try
             {
-                if (_userAgent?.IsCallActive == true)
-                    _userAgent.Hangup();
+                if (_userAgent != null)
+                {
+                    if (_userAgent.IsCallActive)
+                        _userAgent.Hangup();
+                    else
+                        _userAgent.Cancel();  // Cancel outgoing call in Initiating/Ringing state
+                }
             }
-            catch (Exception ex) { Logger.Warn(ex, "Error hanging up"); }
+            catch (Exception ex) { Logger.Warn(ex, "Error ending call"); }
 
+            CleanupUserAgent();
             CleanupMedia();
             SetCallState(CallState.Ended);
             _currentCall = null;
+            _pendingInvite = null;
             return Task.CompletedTask;
         }
 
@@ -370,8 +458,28 @@ namespace WebRtcPhoneDialer.Core.Services
 
         private async Task OnSipRequestReceived(SIPEndPoint localEp, SIPEndPoint remoteEp, SIPRequest req)
         {
-            if (req.Method != SIPMethodsEnum.INVITE)
+            // Handle CANCEL from the remote caller
+            if (req.Method == SIPMethodsEnum.CANCEL)
+            {
+                await HandleSipCancel(req);
                 return;
+            }
+
+            // Respond 200 OK to NOTIFY, OPTIONS, etc. to keep the connection alive
+            if (req.Method != SIPMethodsEnum.INVITE && req.Method != SIPMethodsEnum.CANCEL)
+            {
+                var okResp = SIPResponse.GetResponse(req, SIPResponseStatusCodesEnum.Ok, null);
+                await _sipTransport!.SendResponseAsync(okResp);
+                return;
+            }
+
+            // INVITE retransmission — resend 180 Ringing
+            if (_pendingInvite != null && req.Header.CallId == _pendingInvite.Header.CallId)
+            {
+                var ringing = SIPResponse.GetResponse(req, SIPResponseStatusCodesEnum.Ringing, null);
+                await _sipTransport!.SendResponseAsync(ringing);
+                return;
+            }
 
             Logger.Info($"Incoming INVITE from {req.Header.From.FromURI}");
             LogRtp($"Incoming call from {req.Header.From.FromURI}");
@@ -399,7 +507,37 @@ namespace WebRtcPhoneDialer.Core.Services
             };
             SetCallState(CallState.Ringing);
 
-            IncomingCall?.Invoke(this, _currentCall);
+            try { IncomingCall?.Invoke(this, _currentCall); }
+            catch (Exception ex) { Logger.Warn(ex, "Error in IncomingCall event handler"); }
+        }
+
+        private async Task HandleSipCancel(SIPRequest cancelReq)
+        {
+            // Always respond 200 OK to CANCEL
+            var okResp = SIPResponse.GetResponse(cancelReq, SIPResponseStatusCodesEnum.Ok, null);
+            await _sipTransport!.SendResponseAsync(okResp);
+
+            if (_pendingInvite != null && cancelReq.Header.CallId == _pendingInvite.Header.CallId)
+            {
+                // Send 487 Request Terminated for the original INVITE
+                var terminatedResp = SIPResponse.GetResponse(
+                    _pendingInvite, SIPResponseStatusCodesEnum.RequestTerminated, null);
+                await _sipTransport!.SendResponseAsync(terminatedResp);
+
+                Logger.Info("Incoming call canceled by caller");
+                LogRtp("Incoming call canceled by caller");
+
+                if (_currentCall != null)
+                {
+                    _currentCall.EndTime = DateTime.Now;
+                    SetCallState(CallState.Ended);
+                    _currentCall = null;
+                }
+                _pendingInvite = null;
+
+                try { IncomingCallCanceled?.Invoke(this, EventArgs.Empty); }
+                catch (Exception ex) { Logger.Warn(ex, "Error in IncomingCallCanceled handler"); }
+            }
         }
 
         public async Task AnswerCallAsync()
@@ -474,12 +612,14 @@ namespace WebRtcPhoneDialer.Core.Services
 
         private void OnCallRinging(ISIPClientUserAgent uac, SIPResponse resp)
         {
+            if (_currentCall == null) return;  // Stale callback after cancel
             Logger.Info("Call ringing");
             SetCallState(CallState.Ringing);
         }
 
         private async void OnCallAnswered(ISIPClientUserAgent uac, SIPResponse resp)
         {
+            if (_currentCall == null) { Logger.Debug("Ignoring stale OnCallAnswered callback"); return; }
             Logger.Info("Call answered — starting RTP session and audio");
 
             _rtpPacketsSent = 0;
@@ -537,10 +677,19 @@ namespace WebRtcPhoneDialer.Core.Services
             var statusCode = failResponse != null ? $" ({(int)failResponse.Status} {failResponse.ReasonPhrase})" : "";
             Logger.Warn($"Call failed: {reason}{statusCode}");
             LogRtp($"[CALL FAILED] {reason}{statusCode}");
-            if (_currentCall != null) _currentCall.ErrorMessage = reason;
-            CleanupMedia();
-            SetCallState(CallState.Failed);
-            _currentCall = null;
+            if (_currentCall != null)
+            {
+                _currentCall.ErrorMessage = reason;
+                CleanupUserAgent();
+                CleanupMedia();
+                SetCallState(CallState.Failed);
+                _currentCall = null;
+            }
+            else
+            {
+                // Stale callback from a previously canceled call — ignore
+                Logger.Debug("Ignoring stale OnCallFailed callback (no current call)");
+            }
         }
 
         private void OnRemoteHangup(SIPDialogue dialogue)
@@ -849,6 +998,18 @@ namespace WebRtcPhoneDialer.Core.Services
             _rtpStatsTimer = null;
         }
 
+        private void CleanupUserAgent()
+        {
+            if (_userAgent != null)
+            {
+                _userAgent.OnCallHungup      -= OnRemoteHangup;
+                _userAgent.ClientCallAnswered -= OnCallAnswered;
+                _userAgent.ClientCallFailed  -= OnCallFailed;
+                _userAgent.ClientCallRinging -= OnCallRinging;
+                _userAgent = null;
+            }
+        }
+
         private void CleanupMedia()
         {
             StopRtpStatsTimer();
@@ -1019,6 +1180,9 @@ namespace WebRtcPhoneDialer.Core.Services
 
         private void TearDown()
         {
+            _sipKeepAliveTimer?.Dispose();
+            _sipKeepAliveTimer = null;
+
             try { _regAgent?.Stop(); } catch { }
             _regAgent = null;
 

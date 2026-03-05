@@ -157,6 +157,12 @@ namespace WebRtcPhoneDialer.Windows
             remove => _service.IncomingCall -= value;
         }
 
+        public event EventHandler? IncomingCallCanceled
+        {
+            add => _service.IncomingCallCanceled += value;
+            remove => _service.IncomingCallCanceled -= value;
+        }
+
         public void Dispose()
         {
             _service.Dispose();

@@ -25,6 +25,7 @@ namespace WebRtcPhoneDialer.Views
         private System.Windows.Threading.DispatcherTimer _callTimer;
         private AppSettings _settings;
         private CallSession? _currentCall;
+        private IncomingCallWindow? _incomingCallPopup;
         private bool _ownsService;
         private WinForms.NotifyIcon? _trayIcon;
         private bool _forceClose;
@@ -66,6 +67,7 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.RegistrationStateChanged += OnRegistrationStateChanged;
             _webRtcService.CallStateChanged += OnCallStateChanged;
             _webRtcService.IncomingCall += OnIncomingCall;
+            _webRtcService.IncomingCallCanceled += OnIncomingCallCanceled;
 
             // Sync current state into UI (important when shared service is already registered)
             UpdateRegistrationStatus(_webRtcService.RegistrationState);
@@ -298,23 +300,52 @@ namespace WebRtcPhoneDialer.Views
 
         private void OnIncomingCall(object? sender, CallSession call)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(() =>
             {
-                _currentCall = call;
-
-                var popup = new IncomingCallWindow(call.RemoteParty, _settings);
-                popup.Owner = this;
-                var answered = popup.ShowDialog() == true && popup.Answered;
-
-                if (answered)
+                try
                 {
-                    _ = AnswerIncomingCallAsync();
+                    _currentCall = call;
+
+                    // Restore from tray so the incoming call popup is visible
+                    if (WindowState == WindowState.Minimized || !IsVisible)
+                        RestoreFromTray();
+
+                    _incomingCallPopup = new IncomingCallWindow(call.RemoteParty, _settings);
+                    if (IsVisible)
+                        _incomingCallPopup.Owner = this;
+                    var answered = _incomingCallPopup.ShowDialog() == true && _incomingCallPopup.Answered;
+                    _incomingCallPopup = null;
+
+                    if (answered)
+                    {
+                        _ = AnswerIncomingCallAsync();
+                    }
+                    else
+                    {
+                        // Only reject if not already canceled by the remote caller
+                        if (_webRtcService.GetCurrentCall()?.State == CallState.Ringing)
+                            _webRtcService.RejectCall();
+                        _currentCall = null;
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _webRtcService.RejectCall();
+                    System.Diagnostics.Debug.WriteLine($"OnIncomingCall error: {ex.Message}");
+                    _incomingCallPopup = null;
+                    try { _webRtcService.RejectCall(); } catch { }
                     _currentCall = null;
                 }
+            });
+        }
+
+        private void OnIncomingCallCanceled(object? sender, EventArgs e)
+        {
+            // Caller hung up while ringing — dismiss the popup
+            Dispatcher.BeginInvoke(() =>
+            {
+                _incomingCallPopup?.Close();
+                _incomingCallPopup = null;
+                _currentCall = null;
             });
         }
 
@@ -450,7 +481,7 @@ namespace WebRtcPhoneDialer.Views
 
         private void OnCallStateChanged(object? sender, CallState state)
         {
-            Dispatcher.Invoke(() => UpdateCallStatus(state));
+            Dispatcher.BeginInvoke(() => UpdateCallStatus(state));
         }
 
         private void UpdateCallStatus(CallState state)
@@ -537,6 +568,7 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.RegistrationStateChanged -= OnRegistrationStateChanged;
             _webRtcService.CallStateChanged -= OnCallStateChanged;
             _webRtcService.IncomingCall -= OnIncomingCall;
+            _webRtcService.IncomingCallCanceled -= OnIncomingCallCanceled;
             _callTimer.Stop();
 
             // Dispose tray icon
