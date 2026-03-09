@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows10.0.17763</TargetFramework>
+    <TargetFramework>net481</TargetFramework>
+    <LangVersion>latest</LangVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
@@ -21,9 +22,6 @@
     <Reference Include="SIPSorceryMedia.Abstractions">
       <HintPath>..\lib\SIPSorceryMedia.Abstractions.dll</HintPath>
     </Reference>
-    <Reference Include="SIPSorceryMedia.Windows">
-      <HintPath>..\lib\SIPSorceryMedia.Windows.dll</HintPath>
-    </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\lib\Newtonsoft.Json.dll</HintPath>
     </Reference>
@@ -33,17 +31,8 @@
     <Reference Include="websocket-sharp">
       <HintPath>..\lib\websocket-sharp.dll</HintPath>
     </Reference>
-    <Reference Include="NAudio.Core">
-      <HintPath>..\lib\NAudio.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="NAudio.WinMM">
-      <HintPath>..\lib\NAudio.WinMM.dll</HintPath>
-    </Reference>
     <Reference Include="NAudio">
       <HintPath>..\lib\NAudio.dll</HintPath>
-    </Reference>
-    <Reference Include="NAudio.Wasapi">
-      <HintPath>..\lib\NAudio.Wasapi.dll</HintPath>
     </Reference>
     <Reference Include="Concentus">
       <HintPath>..\lib\Concentus.dll</HintPath>
@@ -75,9 +64,6 @@
     <Reference Include="System.Diagnostics.DiagnosticSource">
       <HintPath>..\lib\System.Diagnostics.DiagnosticSource.dll</HintPath>
     </Reference>
-    <Reference Include="WebRtcPhoneDialer">
-      <HintPath>..\lib\WebRtcPhoneDialer.dll</HintPath>
-    </Reference>
     <Reference Include="RestSharp">
       <HintPath>..\lib\RestSharp.dll</HintPath>
     </Reference>
@@ -87,6 +73,40 @@
     <Reference Include="Google.Apis.Core">
       <HintPath>..\lib\Google.Apis.Core.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.Bcl.AsyncInterfaces">
+      <HintPath>..\lib\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>..\lib\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>..\lib\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>..\lib\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\lib\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Encodings.Web">
+      <HintPath>..\lib\System.Text.Encodings.Web.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Json">
+      <HintPath>..\lib\System.Text.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions">
+      <HintPath>..\lib\System.Threading.Tasks.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ValueTuple">
+      <HintPath>..\lib\System.ValueTuple.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Bcl.HashCode">
+      <HintPath>..\lib\Microsoft.Bcl.HashCode.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

@@ -48,4 +48,4 @@ Quick Start:
   host.Unregister();
   host.Dispose();
 
-Target Framework: net8.0-windows10.0.17763
+Target Framework: .NET Framework 4.8.1 (net481)
