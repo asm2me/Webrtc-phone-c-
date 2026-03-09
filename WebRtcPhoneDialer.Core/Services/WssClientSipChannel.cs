@@ -49,7 +49,9 @@ namespace WebRtcPhoneDialer.Core.Services
             _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
             _ws.Options.AddSubProtocol("sip");
-            _ws.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+            // On .NET Framework, ClientWebSocketOptions doesn't expose
+            // RemoteCertificateValidationCallback. Accept all certs via ServicePointManager.
+            System.Net.ServicePointManager.ServerCertificateValidationCallback = (_, _, _, _) => true;
             // IMPORTANT: Disable .NET's built-in WebSocket ping — FreeSWITCH closes
             // the connection when it receives .NET's ping frames. SIP-level keepalive
             // (OPTIONS requests) is used instead to keep the connection alive.

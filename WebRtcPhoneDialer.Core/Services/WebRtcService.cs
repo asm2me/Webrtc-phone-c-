@@ -1075,7 +1075,7 @@ namespace WebRtcPhoneDialer.Core.Services
         private static string FirstLine(string msg)
         {
             var i = msg.IndexOf('\n');
-            return (i < 0 ? msg : msg[..i]).Trim();
+            return (i < 0 ? msg : msg.Substring(0, i)).Trim();
         }
 
         // ── Teardown ──────────────────────────────────────────────────────────────

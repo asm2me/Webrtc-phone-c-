@@ -1,6 +1,5 @@
 using SIPSorcery.Media;
 using SIPSorceryMedia.Abstractions;
-using SIPSorceryMedia.Windows;
 using WebRtcPhoneDialer.Core.Interfaces;
 
 namespace WebRtcPhoneDialer.Windows
@@ -9,12 +8,12 @@ namespace WebRtcPhoneDialer.Windows
     {
         public IAudioSource CreateAudioSource(int inputDeviceIndex = -1)
         {
-            return new WindowsAudioEndPoint(new AudioEncoder(), inputDeviceIndex, -1, false, false);
+            return new NAudioEndPoint(new AudioEncoder(), inputDeviceIndex, -1);
         }
 
         public IAudioSink CreateAudioSink(int outputDeviceIndex = -1)
         {
-            return new WindowsAudioEndPoint(new AudioEncoder(), -1, outputDeviceIndex, false, false);
+            return new NAudioEndPoint(new AudioEncoder(), -1, outputDeviceIndex);
         }
     }
 }
