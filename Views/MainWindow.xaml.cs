@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using WebRtcPhoneDialer.Core.Enums;
 using WebRtcPhoneDialer.Core.Interfaces;
+using WebRtcPhoneDialer.Core.Ipc;
 using WebRtcPhoneDialer.Core.Models;
 using WebRtcPhoneDialer.Core.Services;
 using WebRtcPhoneDialer.ViewModels;
@@ -29,6 +30,7 @@ namespace WebRtcPhoneDialer.Views
         private bool _ownsService;
         private WinForms.NotifyIcon? _trayIcon;
         private bool _forceClose;
+        private PhoneIpcServer? _ipcServer;
 
         /// <summary>Standalone mode — creates its own service.</summary>
         public MainWindow() : this(null) { }
@@ -69,6 +71,14 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.IncomingCall += OnIncomingCall;
             _webRtcService.IncomingCallCanceled += OnIncomingCallCanceled;
             _webRtcService.NetworkQualityChanged += OnNetworkQualityChanged;
+
+            // Start IPC server so the SDK ExampleApp can connect and control this instance
+            if (_ownsService)
+            {
+                _ipcServer = new PhoneIpcServer(_webRtcService);
+                _ipcServer.ShowWindowRequested += (_, _) =>
+                    Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Activate(); });
+            }
 
             // Sync current state into UI (important when shared service is already registered)
             UpdateRegistrationStatus(_webRtcService.RegistrationState);
@@ -645,6 +655,8 @@ namespace WebRtcPhoneDialer.Views
                 _trayIcon.Dispose();
                 _trayIcon = null;
             }
+
+            _ipcServer?.Dispose();
 
             if (!_ownsService) return; // parent manages lifecycle
 
