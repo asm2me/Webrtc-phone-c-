@@ -43,6 +43,22 @@ namespace WebRtcPhoneDialer.Core.Services
         private DateTime? _firstRtpReceived;
         private Timer? _rtpStatsTimer;
 
+        // Network quality tracking (jitter + packet loss)
+        private long           _rtpPacketsLost;      // cumulative lost (from seq gaps)
+        private bool           _seqInitialized;
+        private ushort         _lastSeqNum;
+        private double         _jitter;              // RFC 3550 jitter in RTP clock units
+        private double         _lastArrivalMs;       // arrival time of last packet (ms)
+        private uint           _lastRtpTimestamp;    // RTP timestamp of last packet
+        private long           _prevSentSnapshot;
+        private long           _prevRecvSnapshot;
+        private long           _prevBytesSentSnapshot;
+        private long           _prevBytesRecvSnapshot;
+        private long           _prevLostSnapshot;
+        private DateTime       _prevSnapshotTime;
+        private string?        _negotiatedCodec;
+        private readonly object _qualityLock = new object();
+
         // Audio level metering (throttled)
         private DateTime _lastMicLevelTime;
         private DateTime _lastSpkLevelTime;
@@ -86,6 +102,9 @@ namespace WebRtcPhoneDialer.Core.Services
         // Incoming call event
         public event EventHandler<CallSession>? IncomingCall;
         public event EventHandler? IncomingCallCanceled;
+
+        // Network quality event (fired every 5 s during connected call)
+        public event EventHandler<NetworkQualityMetrics>? NetworkQualityChanged;
 
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -765,6 +784,7 @@ namespace WebRtcPhoneDialer.Core.Services
                 var fmt = formats.First();
                 _audioSource?.SetAudioSourceFormat(fmt);
                 _audioSink?.SetAudioSinkFormat(fmt);
+                _negotiatedCodec = fmt.Codec.ToString();
                 LogRtp($"Audio codec negotiated: {fmt.Codec} PT={fmt.FormatID}");
             };
 
@@ -796,6 +816,40 @@ namespace WebRtcPhoneDialer.Core.Services
                         _firstRtpReceived = DateTime.Now;
                         LogRtp($"First RTP packet RECEIVED from {ep} ({pkt.Payload.Length} bytes, PT={pkt.Header.PayloadType}, SSRC={pkt.Header.SyncSource})");
                     }
+
+                    // --- Network quality: jitter (RFC 3550) + sequence-based loss ---
+                    var seq = pkt.Header.SequenceNumber;
+                    var rtpTs = pkt.Header.Timestamp;
+                    var arrivalMs = (double)DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+                    lock (_qualityLock)
+                    {
+                        if (!_seqInitialized)
+                        {
+                            _lastSeqNum       = seq;
+                            _lastArrivalMs    = arrivalMs;
+                            _lastRtpTimestamp = rtpTs;
+                            _seqInitialized   = true;
+                        }
+                        else
+                        {
+                            // Packet-loss detection via sequence number gaps (handles wrap-around)
+                            int gap = (int)(((seq - _lastSeqNum - 1) + 65536) % 65536);
+                            if (gap > 0 && gap < 500) // ignore large jumps (SSRC change/reset)
+                                Interlocked.Add(ref _rtpPacketsLost, gap);
+                            _lastSeqNum = seq;
+
+                            // RFC 3550 jitter using timestamp deltas (G.711: 8 kHz clock)
+                            double dArrival = (arrivalMs - _lastArrivalMs) * 8.0; // ms → 8 kHz units
+                            double dRtp = (double)(int)((rtpTs - _lastRtpTimestamp + 0x1_0000_0000L) & 0xFFFF_FFFFL);
+                            double d = Math.Abs(dArrival - dRtp);
+                            if (d < 8000) // ignore outliers > 1 s
+                                _jitter += (d - _jitter) / 16.0;
+
+                            _lastArrivalMs    = arrivalMs;
+                            _lastRtpTimestamp = rtpTs;
+                        }
+                    }
+
                     var now = DateTime.UtcNow;
                     if ((now - _lastSpkLevelTime).TotalMilliseconds >= LevelUpdateMs)
                     {
@@ -822,6 +876,17 @@ namespace WebRtcPhoneDialer.Core.Services
             _rtpBytesReceived = 0;
             _firstRtpSent = null;
             _firstRtpReceived = null;
+
+            // Reset network quality tracking
+            _rtpPacketsLost = 0;
+            _seqInitialized = false;
+            _jitter = 0.0;
+            _prevSentSnapshot = 0;
+            _prevRecvSnapshot = 0;
+            _prevBytesSentSnapshot = 0;
+            _prevBytesRecvSnapshot = 0;
+            _prevLostSnapshot = 0;
+            _prevSnapshotTime = DateTime.UtcNow;
 
             try
             {
@@ -877,21 +942,78 @@ namespace WebRtcPhoneDialer.Core.Services
             _rtpStatsTimer?.Dispose();
             _rtpStatsTimer = new Timer(_ =>
             {
-                if (_currentCall?.State == CallState.Connected)
-                {
-                    _rtpStatsTickCount++;
-                    var sent = Interlocked.Read(ref _rtpPacketsSent);
-                    var recv = Interlocked.Read(ref _rtpPacketsReceived);
-                    var bytesSent = Interlocked.Read(ref _rtpBytesSent);
-                    var bytesRecv = Interlocked.Read(ref _rtpBytesReceived);
-                    LogRtp($"RTP stats — Sent: {sent} pkts ({bytesSent / 1024}KB) | Recv: {recv} pkts ({bytesRecv / 1024}KB)");
+                if (_currentCall?.State != CallState.Connected) return;
 
-                    if (_rtpStatsTickCount == 1 && recv == 0 && sent > 0)
-                        LogRtp("WARNING: Sending RTP but receiving NONE — possible NAT/firewall issue");
-                    if (_rtpStatsTickCount == 1 && sent == 0)
-                        LogRtp("WARNING: No RTP sent — microphone may not be working");
-                }
-            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10));
+                _rtpStatsTickCount++;
+                var sent      = Interlocked.Read(ref _rtpPacketsSent);
+                var recv      = Interlocked.Read(ref _rtpPacketsReceived);
+                var bytesSent = Interlocked.Read(ref _rtpBytesSent);
+                var bytesRecv = Interlocked.Read(ref _rtpBytesReceived);
+                var lost      = Interlocked.Read(ref _rtpPacketsLost);
+
+                LogRtp($"RTP stats — Sent: {sent} pkts ({bytesSent / 1024}KB) | Recv: {recv} pkts ({bytesRecv / 1024}KB)");
+
+                if (_rtpStatsTickCount == 1 && recv == 0 && sent > 0)
+                    LogRtp("WARNING: Sending RTP but receiving NONE — possible NAT/firewall issue");
+                if (_rtpStatsTickCount == 1 && sent == 0)
+                    LogRtp("WARNING: No RTP sent — microphone may not be working");
+
+                // ── Network quality computation ────────────────────────────────────
+                var now         = DateTime.UtcNow;
+                var intervalSec = Math.Max(0.5, (now - _prevSnapshotTime).TotalSeconds);
+
+                var txPkts  = sent      - _prevSentSnapshot;
+                var rxPkts  = recv      - _prevRecvSnapshot;
+                var txBytes = bytesSent - _prevBytesSentSnapshot;
+                var rxBytes = bytesRecv - _prevBytesRecvSnapshot;
+                var lostPkts = lost    - _prevLostSnapshot;
+
+                int txPps  = (int)(txPkts  / intervalSec);
+                int rxPps  = (int)(rxPkts  / intervalSec);
+                int txKbps = (int)(txBytes * 8 / intervalSec / 1000);
+                int rxKbps = (int)(rxBytes * 8 / intervalSec / 1000);
+
+                // Packet loss over interval (use TX as reference for expected packets)
+                float lossPct = txPkts > 0
+                    ? (float)Math.Max(0, Math.Min(100, lostPkts * 100.0 / txPkts))
+                    : 0f;
+
+                float jitterMs;
+                lock (_qualityLock) { jitterMs = (float)(_jitter / 8.0); } // 8 kHz → ms
+
+                bool hasMedia = recv > 0;
+
+                var quality = hasMedia switch
+                {
+                    false                                               => NetworkCallQuality.NoMedia,
+                    true when lossPct > 8f  || jitterMs > 100f         => NetworkCallQuality.Poor,
+                    true when lossPct > 3f  || jitterMs > 50f          => NetworkCallQuality.Fair,
+                    true when lossPct > 1f  || jitterMs > 20f          => NetworkCallQuality.Good,
+                    _                                                   => NetworkCallQuality.Excellent
+                };
+
+                // Update snapshots
+                _prevSentSnapshot      = sent;
+                _prevRecvSnapshot      = recv;
+                _prevBytesSentSnapshot = bytesSent;
+                _prevBytesRecvSnapshot = bytesRecv;
+                _prevLostSnapshot      = lost;
+                _prevSnapshotTime      = now;
+
+                NetworkQualityChanged?.Invoke(this, new NetworkQualityMetrics
+                {
+                    PacketLossPct = lossPct,
+                    JitterMs      = jitterMs,
+                    RxPps         = rxPps,
+                    TxPps         = txPps,
+                    RxKbps        = rxKbps,
+                    TxKbps        = txKbps,
+                    Quality       = quality,
+                    HasMedia      = hasMedia,
+                    Codec         = _negotiatedCodec
+                });
+
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
         }
 
         private void StopRtpStatsTimer()

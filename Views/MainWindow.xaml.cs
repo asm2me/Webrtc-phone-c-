@@ -68,6 +68,7 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.CallStateChanged += OnCallStateChanged;
             _webRtcService.IncomingCall += OnIncomingCall;
             _webRtcService.IncomingCallCanceled += OnIncomingCallCanceled;
+            _webRtcService.NetworkQualityChanged += OnNetworkQualityChanged;
 
             // Sync current state into UI (important when shared service is already registered)
             UpdateRegistrationStatus(_webRtcService.RegistrationState);
@@ -510,6 +511,7 @@ namespace WebRtcPhoneDialer.Views
                     HoldButton.IsEnabled = true;
                     HoldButtonText.Text = "\u23F8"; // pause icon
                     _callTimer.Start();
+                    NetQualityPanel.Visibility = Visibility.Visible;
                     break;
                 case CallState.OnHold:
                     CallStatusText.Text = "On Hold";
@@ -519,6 +521,7 @@ namespace WebRtcPhoneDialer.Views
                     break;
                 case CallState.Ended:
                     _callTimer.Stop();
+                    NetQualityPanel.Visibility = Visibility.Collapsed;
                     if (_currentCall != null)
                     {
                         _currentCall.EndTime = DateTime.Now;
@@ -535,6 +538,7 @@ namespace WebRtcPhoneDialer.Views
                     break;
                 case CallState.Failed:
                     _callTimer.Stop();
+                    NetQualityPanel.Visibility = Visibility.Collapsed;
                     if (_currentCall != null)
                     {
                         _currentCall.EndTime = DateTime.Now;
@@ -549,6 +553,68 @@ namespace WebRtcPhoneDialer.Views
                     HangupButton.IsEnabled = false;
                     HoldButton.IsEnabled = false;
                     break;
+            }
+        }
+
+        private void OnNetworkQualityChanged(object? sender, NetworkQualityMetrics m)
+        {
+            Dispatcher.BeginInvoke(() => UpdateNetworkQualityPanel(m));
+        }
+
+        private void UpdateNetworkQualityPanel(NetworkQualityMetrics m)
+        {
+            // Quality color and label
+            var (barColor, labelColor, label) = m.Quality switch
+            {
+                NetworkCallQuality.Excellent => (Color.FromRgb(0x00, 0xE6, 0x76), Color.FromRgb(0x00, 0xE6, 0x76), "Excellent"),
+                NetworkCallQuality.Good      => (Color.FromRgb(0x76, 0xFF, 0x03), Color.FromRgb(0x76, 0xFF, 0x03), "Good"),
+                NetworkCallQuality.Fair      => (Color.FromRgb(0xFF, 0xAB, 0x00), Color.FromRgb(0xFF, 0xAB, 0x00), "Fair"),
+                NetworkCallQuality.Poor      => (Color.FromRgb(0xFF, 0x17, 0x44), Color.FromRgb(0xFF, 0x17, 0x44), "Poor"),
+                NetworkCallQuality.NoMedia   => (Color.FromRgb(0x55, 0x55, 0x66), Color.FromRgb(0x55, 0x55, 0x66), "No Media"),
+                _                            => (Color.FromRgb(0x33, 0x33, 0x50), Color.FromRgb(0x55, 0x55, 0x66), "—"),
+            };
+
+            int bars = m.Quality switch
+            {
+                NetworkCallQuality.Excellent => 4,
+                NetworkCallQuality.Good      => 3,
+                NetworkCallQuality.Fair      => 2,
+                NetworkCallQuality.Poor      => 1,
+                _                            => 0,
+            };
+
+            var dimColor = Color.FromRgb(0x33, 0x33, 0x50);
+            QBar1.Fill = new SolidColorBrush(bars >= 1 ? barColor : dimColor);
+            QBar2.Fill = new SolidColorBrush(bars >= 2 ? barColor : dimColor);
+            QBar3.Fill = new SolidColorBrush(bars >= 3 ? barColor : dimColor);
+            QBar4.Fill = new SolidColorBrush(bars >= 4 ? barColor : dimColor);
+
+            // Codec suffix
+            var codec = string.IsNullOrEmpty(m.Codec) ? "" : $"  [{m.Codec}]";
+            NetQualityText.Text = label + codec;
+            NetQualityText.Foreground = new SolidColorBrush(labelColor);
+
+            var dimFg = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x77));
+            var veryDimFg = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x50));
+
+            if (m.HasMedia)
+            {
+                NetStatsText.Text = $"Loss: {m.PacketLossPct:F1}%   Jitter: {m.JitterMs:F0} ms";
+                NetStatsText.Foreground = dimFg;
+
+                NetRxRateText.Text = $"↓ {(m.RxKbps > 0 ? m.RxKbps + " kbps" : m.RxPps + " pps")}";
+                NetTxRateText.Text = $"↑ {(m.TxKbps > 0 ? m.TxKbps + " kbps" : m.TxPps + " pps")}";
+                NetRxRateText.Foreground = dimFg;
+                NetTxRateText.Foreground = dimFg;
+            }
+            else
+            {
+                NetStatsText.Text = "Awaiting RTP...";
+                NetStatsText.Foreground = veryDimFg;
+                NetRxRateText.Text = "↓ --";
+                NetTxRateText.Text = "↑ --";
+                NetRxRateText.Foreground = veryDimFg;
+                NetTxRateText.Foreground = veryDimFg;
             }
         }
 
@@ -569,6 +635,7 @@ namespace WebRtcPhoneDialer.Views
             _webRtcService.CallStateChanged -= OnCallStateChanged;
             _webRtcService.IncomingCall -= OnIncomingCall;
             _webRtcService.IncomingCallCanceled -= OnIncomingCallCanceled;
+            _webRtcService.NetworkQualityChanged -= OnNetworkQualityChanged;
             _callTimer.Stop();
 
             // Dispose tray icon

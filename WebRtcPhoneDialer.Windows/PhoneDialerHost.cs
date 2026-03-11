@@ -163,6 +163,12 @@ namespace WebRtcPhoneDialer.Windows
             remove => _service.IncomingCallCanceled -= value;
         }
 
+        public event EventHandler<NetworkQualityMetrics>? NetworkQualityChanged
+        {
+            add => _service.NetworkQualityChanged += value;
+            remove => _service.NetworkQualityChanged -= value;
+        }
+
         public void Dispose()
         {
             _service.Dispose();

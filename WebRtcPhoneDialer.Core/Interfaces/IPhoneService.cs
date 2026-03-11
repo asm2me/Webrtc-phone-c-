@@ -123,5 +123,11 @@ namespace WebRtcPhoneDialer.Core.Interfaces
 
         /// <summary>Fired when the remote caller cancels (hangs up) while ringing.</summary>
         event EventHandler? IncomingCallCanceled;
+
+        /// <summary>
+        /// Fired every 5 seconds during a connected call with live network quality metrics
+        /// (packet loss, jitter, bitrate, quality tier).
+        /// </summary>
+        event EventHandler<NetworkQualityMetrics>? NetworkQualityChanged;
     }
 }

@@ -240,7 +240,7 @@
             </Grid.RowDefinitions>
 
             <!-- Call Status Area -->
-            <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,18,0,6">
+            <StackPanel Grid.Row="0" Margin="0,18,0,6">
                 <TextBlock x:Name="CallStatusText"
                            Text="Ready"
                            FontSize="16" FontWeight="Light"
@@ -252,6 +252,71 @@
                            Foreground="#6C6C8A"
                            HorizontalAlignment="Center"
                            Margin="0,2,0,0"/>
+
+                <!-- Network Quality Panel — shown only during active call -->
+                <Border x:Name="NetQualityPanel"
+                        Visibility="Collapsed"
+                        Margin="30,10,30,0"
+                        Background="#080818"
+                        CornerRadius="6"
+                        Padding="12,7">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Signal bars -->
+                        <Canvas Grid.Column="0" Width="28" Height="16"
+                                VerticalAlignment="Center" Margin="0,0,10,0">
+                            <Rectangle x:Name="QBar1"
+                                       Canvas.Left="0" Canvas.Bottom="0"
+                                       Width="4" Height="4" RadiusX="1" RadiusY="1"
+                                       Fill="#333350"/>
+                            <Rectangle x:Name="QBar2"
+                                       Canvas.Left="8" Canvas.Bottom="0"
+                                       Width="4" Height="8" RadiusX="1" RadiusY="1"
+                                       Fill="#333350"/>
+                            <Rectangle x:Name="QBar3"
+                                       Canvas.Left="16" Canvas.Bottom="0"
+                                       Width="4" Height="12" RadiusX="1" RadiusY="1"
+                                       Fill="#333350"/>
+                            <Rectangle x:Name="QBar4"
+                                       Canvas.Left="24" Canvas.Bottom="0"
+                                       Width="4" Height="16" RadiusX="1" RadiusY="1"
+                                       Fill="#333350"/>
+                        </Canvas>
+
+                        <!-- Quality label + detail line -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock x:Name="NetQualityText"
+                                       Text="No Media"
+                                       FontSize="12" FontWeight="Medium"
+                                       Foreground="#555566"/>
+                            <TextBlock x:Name="NetStatsText"
+                                       Text="Awaiting RTP..."
+                                       FontSize="10"
+                                       Foreground="#333350"
+                                       Margin="0,2,0,0"/>
+                        </StackPanel>
+
+                        <!-- Bitrate / codec -->
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <TextBlock x:Name="NetRxRateText"
+                                       Text="↓ --"
+                                       FontSize="10"
+                                       Foreground="#333350"
+                                       TextAlignment="Right"/>
+                            <TextBlock x:Name="NetTxRateText"
+                                       Text="↑ --"
+                                       FontSize="10"
+                                       Foreground="#333350"
+                                       TextAlignment="Right"
+                                       Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </StackPanel>
 
             <!-- Phone Number Input -->
