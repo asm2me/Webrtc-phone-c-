@@ -47,6 +47,10 @@ namespace ExampleApp
         private Label _lblMic = null!;
         private Label _lblSpk = null!;
 
+        // ── Network quality ──
+        private Label _lblNetQuality = null!;
+        private Label _lblNetStats = null!;
+
         // ── Debug log ──
         private TextBox _txtDebugLog = null!;
         private CheckBox _chkSipLog = null!;
@@ -200,6 +204,20 @@ namespace ExampleApp
             grpAudio.Controls.Add(audioLayout);
             leftScroll.Controls.Add(grpAudio);
 
+            // Network Quality Group
+            var grpNet = CreateGroup("Network Quality", 80);
+            var netLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+            netLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+            netLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            netLayout.Controls.Add(new Label { Text = "Quality:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+            _lblNetQuality = new Label { Text = "—", AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold), ForeColor = Color.Gray };
+            netLayout.Controls.Add(_lblNetQuality, 1, 0);
+            netLayout.Controls.Add(new Label { Text = "Stats:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
+            _lblNetStats = new Label { Text = "—", AutoSize = true, ForeColor = Color.DimGray };
+            netLayout.Controls.Add(_lblNetStats, 1, 1);
+            grpNet.Controls.Add(netLayout);
+            leftScroll.Controls.Add(grpNet);
+
             leftPanel.Controls.Add(leftScroll);
             mainLayout.Controls.Add(leftPanel, 0, 0);
 
@@ -276,6 +294,8 @@ namespace ExampleApp
             _phone.SpeakerLevelChanged += OnSpeakerLevelChanged;
             _phone.SipMessageLogged += OnSipMessageLogged;
             _phone.RtpDebugLogged += OnRtpDebugLogged;
+            _phone.NetworkQualityChanged += OnNetworkQualityChanged;
+            _phone.IncomingCallCanceled += OnIncomingCallCanceled;
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -607,6 +627,41 @@ namespace ExampleApp
 
             var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
             _txtDebugLog.AppendText($"[{timestamp}] {text}{Environment.NewLine}");
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // NETWORK QUALITY
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private void OnNetworkQualityChanged(object? sender, NetworkQualityMetrics m)
+        {
+            if (InvokeRequired) { BeginInvoke(() => OnNetworkQualityChanged(sender, m)); return; }
+
+            var (color, label) = m.Quality switch
+            {
+                NetworkCallQuality.Excellent => (Color.Green,        "Excellent"),
+                NetworkCallQuality.Good      => (Color.YellowGreen,  "Good"),
+                NetworkCallQuality.Fair      => (Color.Orange,       "Fair"),
+                NetworkCallQuality.Poor      => (Color.Red,          "Poor"),
+                NetworkCallQuality.NoMedia   => (Color.Gray,         "No Media"),
+                _                           => (Color.Gray,          "Unknown"),
+            };
+
+            _lblNetQuality.ForeColor = color;
+            _lblNetQuality.Text = label + (m.Codec != null ? $" ({m.Codec})" : "");
+            _lblNetStats.Text = $"Loss: {m.PacketLossPct:F1}%  Jitter: {m.JitterMs:F0}ms  ↓{m.RxKbps}kbps ↑{m.TxKbps}kbps";
+
+            AppendLog($"[QUALITY] {label}  Loss={m.PacketLossPct:F1}%  Jitter={m.JitterMs:F0}ms  " +
+                      $"↓{m.RxKbps}kbps ↑{m.TxKbps}kbps  Rx={m.RxPps}pps  Codec={m.Codec}");
+        }
+
+        private void OnIncomingCallCanceled(object? sender, EventArgs e)
+        {
+            if (InvokeRequired) { Invoke(() => OnIncomingCallCanceled(sender, e)); return; }
+            AppendLog("[INCOMING] Caller hung up while ringing.");
+            _lblCallStatus.Text = "Idle";
+            _lblCallStatus.ForeColor = Color.Gray;
+            ResetCallUI();
         }
 
         // ═══════════════════════════════════════════════════════════════════════
