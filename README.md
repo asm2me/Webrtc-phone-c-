@@ -1,218 +1,292 @@
-# WebRTC Phone Dialer
+# VOIPAT Phone — WebRTC SIP Phone Dialer
 
-A modern C# WPF application for making VoIP calls using WebRTC technology. This application provides a user-friendly interface for initiating and managing phone calls over the internet.
-
-## Features
-
-- **WebRTC-based VoIP**: Make calls using WebRTC peer-to-peer technology
-- **Dial Pad Interface**: Classic telephone-style dial pad for easy number entry
-- **Phone Number/SIP URI Support**: Supports both standard phone numbers and SIP addresses
-- **Call Management**: Initiate, monitor, and terminate calls
-- **Configuration**: Customize STUN and TURN servers for NAT traversal
-- **Call Duration Tracking**: Monitor call duration in real-time
-- **Call History**: Track previous calls
-- **Logging**: Built-in logging with NLog for debugging and troubleshooting
-
-## System Requirements
-
-- Windows 10 or later
-- .NET 6.0 or higher
-- Visual Studio 2022 (for development)
-
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd webrtc-phone-dialer
-   ```
-
-2. Open the solution in Visual Studio 2022
-
-3. Restore NuGet packages:
-   ```bash
-   dotnet restore
-   ```
-
-4. Build the project:
-   ```bash
-   dotnet build
-   ```
-
-## Building the Project
-
-### Using Visual Studio
-1. Open `WebRtcPhoneDialer.csproj` in Visual Studio
-2. Click Build → Build Solution (Ctrl+Shift+B)
-
-### Using Command Line
-```bash
-dotnet build
-dotnet build --configuration Release
-```
-
-## Running the Application
-
-### From Visual Studio
-1. Press F5 or click Debug → Start Debugging
-
-### From Command Line
-```bash
-dotnet run
-```
-
-### Using Compiled Executable
-After building, the executable will be located in:
-- Debug: `bin\Debug\net6.0-windows\WebRtcPhoneDialer.exe`
-- Release: `bin\Release\net6.0-windows\WebRtcPhoneDialer.exe`
-
-## Usage
-
-### Making a Call
-
-1. **Enter Phone Number/SIP URI**: Type the destination phone number or SIP address into the input field
-   - Phone numbers: Enter digits (e.g., 1234567890)
-   - SIP URIs: Enter in format user@domain (e.g., john@sip.example.com)
-
-2. **Use Dial Pad**: Click numbers on the dial pad to enter the phone number
-
-3. **Initiate Call**: Click the "Call" button to initiate the call
-
-4. **Monitor Call**: The call status and duration are displayed in real-time
-
-5. **End Call**: Click the "Hang Up" button to end the active call
-
-### Configuring Servers
-
-1. Click the "Settings" expander at the bottom of the window
-2. Enter STUN server address (e.g., `stun:stun.l.google.com:19302`)
-3. Enter ICE server(s) - one per line
-4. Click "Save Settings"
-
-Default STUN/ICE servers are provided:
-- `stun:stun.l.google.com:19302`
-- `stun:stun1.l.google.com:19302`
-
-## Project Structure
-
-```
-WebRtcPhoneDialer/
-├── Views/
-│   └── MainWindow.xaml           # Main UI
-│   └── MainWindow.xaml.cs        # UI logic
-├── ViewModels/
-│   ├── MainWindowViewModel.cs    # Main view model
-│   └── BaseViewModel.cs          # Base view model with INotifyPropertyChanged
-├── Models/
-│   ├── CallSession.cs            # Call session model
-│   └── WebRtcConfig.cs           # WebRTC configuration model
-├── Services/
-│   └── WebRtcService.cs          # Core WebRTC service
-├── Utilities/
-│   └── PhoneNumberValidator.cs   # Phone number validation
-├── App.xaml                       # Application resources
-├── App.xaml.cs                    # Application code-behind
-└── WebRtcPhoneDialer.csproj      # Project file
-```
-
-## Dependencies
-
-- **NLog**: Logging framework
-- **RestSharp**: HTTP client library
-- **Newtonsoft.Json**: JSON serialization
-- **google-api-dotnet-client**: Google APIs support
-
-## WebRTC Implementation Notes
-
-This project provides a foundation for WebRTC integration. To add actual WebRTC functionality:
-
-1. **Add WebRTC Library**: Consider adding a WebRTC library such as:
-   - WebRtcOrgNETAPI (Mozilla WebRTC)
-   - Pion WebRTC (Go-based, requires interop)
-   - Or integrate with a SIP/WebRTC gateway
-
-2. **Implement Peer Connection**:
-   - Modify `CreatePeerConnection()` in `WebRtcService.cs`
-   - Set up ICE candidates
-   - Handle offer/answer signaling
-
-3. **Audio Handling**:
-   - Integrate audio capture from microphone
-   - Handle audio playback from speakers
-   - Implement audio codec selection
-
-4. **Signaling Protocol**:
-   - Implement SIP (Session Initiation Protocol)
-   - Or use WebSocket-based signaling
-   - Handle SDP (Session Description Protocol)
-
-## Configuration Files
-
-### NLog Configuration
-
-Create a `nlog.config` file in the application root for logging configuration:
-
-```xml
-<?xml version="1.0" encoding="utf-8" ?>
-<nlog xmlns="http://www.nlog-project.org/schemas/NLog.xsd"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <targets>
-    <target name="file" xsi:type="File" fileName="logs/app-${shortdate}.log" />
-    <target name="console" xsi:type="Console" />
-  </targets>
-  <rules>
-    <logger name="*" minlevel="Info" writeTo="console,file" />
-  </rules>
-</nlog>
-```
-
-## Troubleshooting
-
-### Application Won't Start
-- Ensure .NET 6.0 or higher is installed
-- Check that all NuGet packages are restored
-- Verify Windows 10 or later is installed
-
-### No Sound During Calls
-- Check system audio settings
-- Ensure microphone and speaker permissions are granted
-- Verify audio codecs are properly configured
-
-### Cannot Connect to Peer
-- Test STUN/TURN server connectivity
-- Check firewall settings
-- Verify ICE server configuration
-- Check network connectivity
-
-## Logging
-
-Logs are output to the console by default. Configure logging in `WebRtcService.cs` initialization or with an `nlog.config` file.
-
-## Future Enhancements
-
-- [ ] Video call support
-- [ ] Call recording
-- [ ] Contact management
-- [ ] Call transfer
-- [ ] Conference calling
-- [ ] Screen sharing
-- [ ] Instant messaging
-- [ ] Mobile app support
-- [ ] Cloud-based call history
-- [ ] Advanced security features (SRTP, DTLS)
-
-## License
-
-This project is provided as-is for educational and development purposes.
-
-## Contributing
-
-Contributions are welcome! Please fork the repository and submit pull requests with improvements.
-
-## Support
-
-For issues, questions, or suggestions, please open an issue in the repository.
+A production-ready **C# WPF SIP phone** built on [SIPSorcery](https://github.com/sipsorcery-org/sipsorcery) and NAudio. Supports WSS (WebSocket Secure) signaling, G.711 audio, DTMF, hold/resume, incoming calls, real-time network quality monitoring, and a full **SDK** for embedding phone control in your own apps.
 
 ---
 
-**Note**: This is a foundational WebRTC phone dialer. For production use, additional security measures, error handling, and real WebRTC library integration are recommended.
+## Features
+
+| Category | Details |
+|---|---|
+| **Protocol** | SIP over WSS (WebSocket Secure), RFC 3261 |
+| **Audio** | G.711 µ-law / A-law (PCMU/PCMA), NAudio Windows audio |
+| **Call control** | Outgoing, incoming, hold/resume, mute, reject, DTMF (RFC 2833) |
+| **Network quality** | Live packet loss %, jitter (RFC 3550), bitrate, quality tier (Excellent → Poor) |
+| **UI** | Dark-themed WPF, system tray, signal-bar quality indicator, debug log |
+| **Settings** | JSON persistence (`%AppData%\WebRtcPhoneDialer\settings.json`) |
+| **SDK** | `PhoneDialerHost` reusable DLL + named-pipe IPC for remote control |
+| **Example app** | WinForms SDK demo that connects to the running phone via IPC |
+
+---
+
+## System Requirements
+
+- **OS:** Windows 10 / 11
+- **Runtime:** .NET Framework 4.8.1
+- **Build SDK:** .NET 8 SDK (used to build net481 targets)
+- **Audio:** Windows audio device (microphone + speakers/headset)
+
+---
+
+## Solution Structure
+
+```
+WebRtcPhoneDialer.Core/          ← Reusable class library (net481)
+  Interfaces/
+    IPhoneService.cs             ← Primary API contract
+    IAudioEndPointFactory.cs
+    IAudioDeviceProvider.cs
+  Models/
+    AppSettings.cs               ← SIP credentials, audio, codec config
+    CallSession.cs               ← Active call state
+    WebRtcConfig.cs              ← Runtime WebRTC/SIP configuration
+    NetworkQualityMetrics.cs     ← Live call quality snapshot
+  Enums/
+    CallState.cs                 ← Idle, Initiating, Ringing, Connected, OnHold, Ended, Failed
+    RegistrationState.cs         ← Unregistered, Registering, Registered, Failed
+  Events/
+    CallStateChangedEventArgs.cs
+    SipLogEventArgs.cs
+    RtpLogEventArgs.cs
+  Services/
+    WebRtcService.cs             ← SIP stack, RTP media, network quality engine
+    WssClientSipChannel.cs       ← WSS transport for SIPSorcery
+    CallHistoryService.cs
+  Ipc/
+    IpcMessage.cs                ← Named-pipe wire format (JSON)
+    PhoneIpcServer.cs            ← Pipe server (runs inside the main app)
+    PhoneIpcClient.cs            ← Pipe client (used by the SDK ExampleApp)
+  Utilities/
+    PhoneNumberValidator.cs
+
+WebRtcPhoneDialer.Windows/       ← Windows platform implementations (net481)
+  WindowsAudioEndPointFactory.cs ← NAudio microphone + speaker endpoint
+  WindowsAudioDeviceProvider.cs  ← Enumerates Windows audio devices
+  PhoneDialerHost.cs             ← Convenience host — single entry point for parent apps
+
+WebRtcPhoneDialer/               ← WPF desktop application (net481)
+  Views/
+    MainWindow.xaml / .cs        ← Main phone UI + IPC server startup
+    SettingsWindow.xaml / .cs    ← SIP / audio / codec settings
+    DebugWindow.xaml / .cs       ← SIP & RTP debug log viewer
+  ViewModels/
+    MainWindowViewModel.cs
+    SettingsViewModel.cs
+    BaseViewModel.cs
+  App.xaml / App.xaml.cs
+
+SDK/
+  lib/                           ← Pre-built DLLs for distribution
+  ExampleApp/                    ← WinForms demo — connects via IPC
+    MainForm.cs                  ← Full remote-control UI
+    Program.cs
+  README.txt                     ← SDK quick-start guide
+  ExampleApp.zip                 ← Distributable SDK bundle
+```
+
+---
+
+## Build & Run
+
+### Prerequisites
+
+```bash
+# Install .NET 8 SDK (if not already present)
+winget install Microsoft.DotNet.SDK.8
+```
+
+### Build
+
+```bash
+dotnet restore
+dotnet build WebRtcPhoneDialer.csproj
+```
+
+### Run
+
+```bash
+dotnet run --project WebRtcPhoneDialer.csproj
+```
+
+Executable is at: `bin\Debug\net481\WebRtcPhoneDialer.exe`
+
+---
+
+## Configuration
+
+Settings are stored at `%AppData%\WebRtcPhoneDialer\settings.json` and edited via the in-app Settings window.
+
+| Setting | Description |
+|---|---|
+| `SignalingServerUrl` | WSS server URL, e.g. `wss://sip.example.com:8089/ws` |
+| `SipDomain` | SIP domain / registrar |
+| `Username` | SIP account username |
+| `Password` | SIP account password |
+| `StunServer` | STUN server URI, e.g. `stun:stun.l.google.com:19302` |
+| `InputDeviceId` | Microphone index (empty = system default) |
+| `OutputDeviceId` | Speaker index (empty = system default) |
+| `PreferredCodec` | `PCMU` (G.711 µ-law) or `PCMA` (G.711 A-law) |
+
+---
+
+## Network Quality Monitoring
+
+During a connected call the engine samples RTP every **5 seconds** and fires `NetworkQualityChanged` with a `NetworkQualityMetrics` snapshot:
+
+| Metric | Description |
+|---|---|
+| `PacketLossPct` | Estimated packet loss % (sequence-number gap detection) |
+| `JitterMs` | RFC 3550 inter-arrival jitter in milliseconds |
+| `RxKbps / TxKbps` | Receive / transmit bitrate (kbps) |
+| `RxPps / TxPps` | Packets per second |
+| `Codec` | Negotiated codec name (`PCMU`, `PCMA`) |
+| `Quality` | `Excellent` · `Good` · `Fair` · `Poor` · `NoMedia` |
+
+**Quality tiers:**
+
+| Tier | Condition |
+|---|---|
+| Excellent | Loss ≤ 1% **and** Jitter ≤ 20 ms |
+| Good | Loss ≤ 3% **and** Jitter ≤ 50 ms |
+| Fair | Loss ≤ 8% **and** Jitter ≤ 100 ms |
+| Poor | Loss > 8% **or** Jitter > 100 ms |
+| No Media | No RTP packets received |
+
+The WPF UI shows a **4-bar signal strength indicator** that updates in real time.
+
+---
+
+## SDK — Embed in Your App
+
+The SDK ships as pre-built DLLs in `SDK/lib/`. Reference them in your project and use `PhoneDialerHost` as the single entry point.
+
+### Standalone mode (your app owns the SIP stack)
+
+```csharp
+var host = new PhoneDialerHost();
+
+// Wire events
+host.RegistrationStateChanged += (s, state) => { /* Registered, Failed, … */ };
+host.CallStateDetailChanged   += (s, e)     => { /* Ringing, Connected, Ended, … */ };
+host.IncomingCall              += (s, call)  => { /* show incoming call UI */ };
+host.IncomingCallCanceled      += (s, e)     => { /* caller hung up while ringing */ };
+host.MicLevelChanged           += (s, level) => { /* 0.0–1.0 */ };
+host.SpeakerLevelChanged       += (s, level) => { /* 0.0–1.0 */ };
+host.NetworkQualityChanged     += (s, m)     => { /* NetworkQualityMetrics */ };
+host.SipMessageLogged          += (s, e)     => { /* SIP debug traffic */ };
+host.RtpDebugLogged            += (s, e)     => { /* RTP debug info */ };
+
+// Configure and register
+host.LoadAndApplySettings();          // loads %AppData%\WebRtcPhoneDialer\settings.json
+await host.RegisterAsync();
+
+// Call control
+await host.InitiateCallAsync("100");
+host.HoldCall();
+host.UnholdCall();
+host.SendDtmf(1);                     // tone 0–11 (0-9, *, #)
+host.MuteMicrophone();
+host.UnmuteMicrophone();
+await host.EndCallAsync();
+
+// Incoming calls
+host.IncomingCall += async (s, call) => {
+    await host.AnswerCallAsync();     // or host.RejectCall();
+};
+
+// Audio devices
+var inputs  = host.AudioDevices.GetInputDevices();
+var outputs = host.AudioDevices.GetOutputDevices();
+
+// Diagnostics
+var (sent, recv, bytesSent, bytesRecv) = host.GetRtpStats();
+var duration = host.GetCallDuration();
+
+// Cleanup
+host.Unregister();
+host.Dispose();
+```
+
+### IPC mode — control the running VOIPAT Phone app
+
+If VOIPAT Phone is already running, use `PhoneIpcClient` to control it remotely from your own process — no duplicate SIP stack, no port conflicts.
+
+```csharp
+var phone = new PhoneIpcClient();
+
+// Connection status
+phone.ConnectionChanged += (s, connected) => {
+    Console.WriteLine(connected ? "Connected to VOIPAT Phone" : "Disconnected");
+};
+
+// Same events as IPhoneService
+phone.RegistrationStateChanged += (s, state) => { };
+phone.CallStateDetailChanged   += (s, e)     => { };
+phone.IncomingCall              += (s, call)  => { };
+phone.NetworkQualityChanged     += (s, m)     => { };
+phone.MicLevelChanged           += (s, level) => { };
+phone.SipMessageLogged          += (s, e)     => { };
+
+// Start the auto-reconnect loop
+phone.Connect();
+
+// Commands (fire-and-forget; result arrives via events)
+phone.Register();
+phone.Call("100");
+phone.Hold();
+phone.Unhold();
+phone.Mute();
+phone.Unmute();
+phone.SendDtmf(1);
+phone.Answer();
+phone.Reject();
+phone.HangUp();
+phone.ShowWindow();   // bring the VOIPAT Phone window to front
+
+phone.Dispose();
+```
+
+The IPC transport is a **Windows named pipe** (`\\.\pipe\WebRtcPhoneDialer_IPC`) with line-delimited JSON messages. VOIPAT Phone starts the pipe server automatically on launch.
+
+---
+
+## Dependencies
+
+| Package | Version | Purpose |
+|---|---|---|
+| SIPSorcery | 8.0.23 | SIP stack (REGISTER, INVITE, BYE, …) |
+| NAudio | 1.10.0 | Windows audio capture/playback |
+| Newtonsoft.Json | 13.0.3 | JSON settings & IPC serialization |
+| NLog | 5.2.7 | Logging |
+| RestSharp | 107.3.0 | HTTP utilities |
+| Microsoft.Extensions.Logging | 9.0.0 | SIPSorcery logging bridge |
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `System.Memory` assembly mismatch (HRESULT 0x80131040) | Ensure `App.config` has all binding redirects. `<supportedRuntime>` must be in `<startup>`, not inside `<runtime>`. |
+| Registration fails immediately | Verify `SignalingServerUrl` starts with `wss://` and the SIP server is reachable |
+| No audio | Check microphone/speaker device IDs in settings. Leave blank for system default. |
+| ExampleApp shows "Not connected" | Start VOIPAT Phone first — it must be running to host the IPC pipe server |
+| Build error: file locked | Kill the running `WebRtcPhoneDialer.exe` before rebuilding: `taskkill //F //IM WebRtcPhoneDialer.exe` |
+
+---
+
+## Roadmap
+
+- [ ] SRTP / DTLS media encryption
+- [ ] Opus codec support
+- [ ] Video call support
+- [ ] Call transfer (REFER)
+- [ ] Conference calling
+- [ ] Contact book integration
+- [ ] Android / iOS port (see companion repos)
+
+---
+
+## License
+
+MIT — free for commercial and personal use.
