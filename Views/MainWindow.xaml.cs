@@ -80,6 +80,10 @@ namespace WebRtcPhoneDialer.Views
                     Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Activate(); });
             }
 
+            // Show toast if app was launched via a provisioning link
+            if (App.ProvisionedDisplay != null)
+                Loaded += (_, _) => App.ShowProvisionedToast(App.ProvisionedDisplay, App.ProvisionedExtension!);
+
             // Sync current state into UI (important when shared service is already registered)
             UpdateRegistrationStatus(_webRtcService.RegistrationState);
 
