@@ -82,15 +82,21 @@ namespace WebRtcPhoneDialer
 
                 // Build and save settings
                 var existing = AppSettings.Load();
-                existing.Username         = (string?)cfg["ext"]    ?? existing.Username;
-                existing.Password         = (string?)cfg["pass"]   ?? existing.Password;
-                existing.SipDomain        = (string?)cfg["domain"] ?? existing.SipDomain;
-                existing.SignalingServerUrl= (string?)cfg["wss"]   ?? existing.SignalingServerUrl;
-                existing.StunServer       = (string?)cfg["stun"]  ?? existing.StunServer;
+                existing.Username          = (string?)cfg["ext"]       ?? existing.Username;
+                existing.Password          = (string?)cfg["pass"]      ?? existing.Password;
+                existing.SipDomain         = (string?)cfg["domain"]    ?? existing.SipDomain;
+                existing.SignalingServerUrl = (string?)cfg["wss"]       ?? existing.SignalingServerUrl;
+                existing.StunServer        = (string?)cfg["stun"]      ?? existing.StunServer;
+
+                var turn = (string?)cfg["turn"];
+                if (!string.IsNullOrEmpty(turn))  existing.TurnServer   = turn;
+                var turnU = (string?)cfg["turn_user"];
+                if (!string.IsNullOrEmpty(turnU)) existing.TurnUsername = turnU;
+                var turnP = (string?)cfg["turn_pass"];
+                if (!string.IsNullOrEmpty(turnP)) existing.TurnPassword = turnP;
 
                 var codec = (string?)cfg["codec"];
-                if (!string.IsNullOrEmpty(codec))
-                    existing.AudioCodecName = codec;
+                if (!string.IsNullOrEmpty(codec)) existing.AudioCodecName = codec;
 
                 existing.Save();
 
